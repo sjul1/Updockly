@@ -226,7 +226,7 @@ docker compose logs -f backend
 
 ## 📅 Upcoming Tasks
 
-- [ ] Publish Docker image
+- [x] Publish Docker image
 - [ ] Implement user roles and permissions for granular access control.
 - [ ] Write Wiki documentation
 - [ ] Add support for more container orchestration platforms (e.g., Kubernetes).
