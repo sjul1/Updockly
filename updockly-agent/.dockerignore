@@ -1,0 +1,12 @@
+bin
+**/bin
+**/tmp
+**/.git
+**/.gitignore
+*.log
+*.swp
+*.swo
+.DS_Store
+node_modules
+dist
+coverage

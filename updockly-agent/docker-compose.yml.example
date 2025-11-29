@@ -1,0 +1,14 @@
+services:
+  updockly-agent:
+    image: sjul/updockly-agent:latest
+    environment:
+      - UPDOCKLY_SERVER=https://updockly.example.com
+      - UPDOCKLY_AGENT_TOKEN=replace-with-token
+      - UPDOCKLY_AGENT_NAME=remote-docker-host
+      - UPDOCKLY_INTERVAL=10s
+      - UPDOCKLY_DEBUG=false
+      - UPDOCKLY_CA_CERT=/app/ca.crt
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./agent-data/ca.crt:/app/ca.crt:ro
+    restart: unless-stopped
