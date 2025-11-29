@@ -76,23 +76,84 @@ This marks my first open-source release on GitHub. I have always learned by myse
 
 ## 🚀 Quick Start
 
-1.  **Clone the repository**:
+1.  **Copy or create a docker-compose.yml file**:
 
     ```bash
-    git clone https://github.com/your-username/updockly.git
-    cd updockly
+    services:
+      backend:
+        image: sjul/updockly-api:latest
+        restart: unless-stopped
+        container_name: updockly-backend
+        environment:
+          DOCKER_HOST: tcp://docker-proxy:2375
+        depends_on:
+          postgres:
+            condition: service_healthy
+        volumes:
+          - certs:/etc/updockly/certs
+        env_file:
+          - .env
+
+      frontend:
+        image: sjul/updockly:latest
+        restart: unless-stopped
+        container_name: updockly-frontend
+        depends_on:
+          - backend
+        volumes:
+          - certs:/etc/updockly/certs
+        env_file:
+          - .env
+        ports:
+          - "5174:8080"
+          - "5175:8443"
+
+      postgres:
+        image: postgres:16
+        restart: unless-stopped
+        container_name: updockly-postgres
+        environment:
+          POSTGRES_DB: updocklydb
+          POSTGRES_USER: updockly
+          POSTGRES_PASSWORD: updockly
+        volumes:
+          - postgres-data:/var/lib/postgresql/data
+        healthcheck:
+          test: ["CMD-SHELL", "pg_isready -U updockly -d updocklydb"]
+          interval: 10s
+          timeout: 5s
+          retries: 5
+
+      docker-proxy:
+        image: tecnativa/docker-socket-proxy:latest
+        restart: unless-stopped
+        container_name: updockly-docker-proxy
+        environment:
+          CONTAINERS: 1
+          INFO: 1
+          PING: 1
+          IMAGES: 1
+          DISTRIBUTION: 1
+          POST: 1
+          DELETE: 1
+        volumes:
+          - /var/run/docker.sock:/var/run/docker.sock:ro
+
+    volumes:
+      postgres-data:
+      certs:
     ```
 
-2.  **Copy environment file**:
+2.  **Copy the repository environment file**:
 
     ```bash
     cp .env.example .env
     ```
 
-3.  **Start the full stack**:
+3.  **Start the full stack with the create or provided `docker-compose.yml`**:
 
     ```bash
-    docker compose up -d --build
+    docker compose up -d
     ```
 
 4.  **Access the UI**:
