@@ -18,15 +18,9 @@ FROM alpine:latest
 
 WORKDIR /app
 
-# Install backup tools and docker cli
-# Note: postgresql-client provides pg_dump
-# mariadb-client provides mysqldump
-# mongodb-tools provides mongodump
-# redis provides redis-cli
-# docker-cli is needed for "docker" mode connections
+# Install dependencies
 RUN apk add --no-cache \
     ca-certificates \
-    docker-cli \
     bash \
     tzdata \
     su-exec
