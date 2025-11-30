@@ -65,6 +65,8 @@ This marks my first open-source release on GitHub. I have always learned by myse
 
 ## ⚙️ Configuration
 
+Updockly is configured using environment variables. You can set these in your `.env` file or directly in your Docker configuration.
+
 - **Web UI Settings**: Database, timezone, certificates, and more.
 - **`.env` Config**: Full environment variable control.
 
@@ -72,95 +74,57 @@ This marks my first open-source release on GitHub. I have always learned by myse
   <img src="docs/screenshots/settings.png" alt="Settings Screenshot" width="65%">
 </p>
 
+## Core Settings
+
+| Variable             | Description                                                                                      | Default Value                                                            |
+| :------------------- | :----------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------- |
+| `DATABASE_URL`       | Connection string for the database (PostgreSQL or SQLite).                                       | `postgres://updockly:updockly@localhost:5432/updocklydb?sslmode=disable` |
+| `SECRET_KEY`         | **Important.** Key used for encryption and JWT signing. Must be strong and random in production. | `dev-secret-key`                                                         |
+| `CLIENT_ORIGIN`      | The URL where the frontend is accessible. Used for CORS and redirects.                           | (Empty)                                                                  |
+| `SERVER_ADDR`        | The address and port the backend server listens on.                                              | `:5000`                                                                  |
+| `TIMEZONE`           | Timezone used for scheduling and logging (e.g., `Europe/Paris`).                                 | `UTC`                                                                    |
+| `SERVER_SAN_IPS`     | Comma-separated list of IP addresses to add to the self-signed certificate.                      | (Empty)                                                                  |
+| `SERVER_SAN_DOMAINS` | Comma-separated list of domains to add to the self-signed certificate.                           | (Empty)                                                                  |
+
+## Single Sign-On (SSO)
+
+| Variable            | Description                                                                                       | Default Value |
+| :------------------ | :------------------------------------------------------------------------------------------------ | :------------ |
+| `SSO_ENABLED`       | Enable or disable SSO (`true`/`false`).                                                           | `false`       |
+| `SSO_PROVIDER`      | The OIDC provider type (e.g., `authentik`, `keycloak`).                                           | (Empty)       |
+| `SSO_ISSUER_URL`    | The OIDC Issuer URL (e.g., `https://auth.example.com/application/o/updockly/`).                   | (Empty)       |
+| `SSO_CLIENT_ID`     | The Client ID provided by your IdP.                                                               | (Empty)       |
+| `SSO_CLIENT_SECRET` | The Client Secret provided by your IdP.                                                           | (Empty)       |
+| `SSO_REDIRECT_URL`  | The callback URL registered in your IdP. Should match `CLIENT_ORIGIN` + `/api/auth/sso/callback`. | (Empty)       |
+
+## Notifications
+
+| Variable                       | Description                                              | Default Value |
+| :----------------------------- | :------------------------------------------------------- | :------------ |
+| `NOTIFICATION_WEBHOOK_URL`     | Generic webhook URL for notifications.                   | (Empty)       |
+| `NOTIFICATION_DISCORD_TOKEN`   | Discord Bot Token.                                       | (Empty)       |
+| `NOTIFICATION_DISCORD_CHANNEL` | Discord Channel ID.                                      | (Empty)       |
+| `NOTIFICATION_ON_SUCCESS`      | Send notification on successful update (`true`/`false`). | (Empty)       |
+| `NOTIFICATION_ON_FAILURE`      | Send notification on failed update (`true`/`false`).     | (Empty)       |
+| `NOTIFICATION_RECAP_TIME`      | Time for daily recap (HH:MM).                            | (Empty)       |
+| `NOTIFICATION_CRON`            | Cron expression for recap schedule.                      | (Empty)       |
+
+## File Secrets (Docker Secrets)
+
+Most variables support appending `_FILE` to the name to read the value from a file (e.g., `SECRET_KEY_FILE=/run/secrets/my_secret_key`). This is useful for Docker Swarm or Kubernetes secrets.
+
 ---
 
 ## 🚀 Quick Start
 
-1.  **Copy or create a docker-compose.yml file**:
+1.  **Follow the setup guide for a quick start**:
+    👉 [Setup Guide](https://github.com/sjul1/Updockly/wiki/1.-Setup)
 
-    ```bash
-    services:
-      backend:
-        image: sjul/updockly-api:latest
-        restart: unless-stopped
-        container_name: updockly-backend
-        environment:
-          DOCKER_HOST: tcp://docker-proxy:2375
-        depends_on:
-          postgres:
-            condition: service_healthy
-        volumes:
-          - certs:/etc/updockly/certs
-        env_file:
-          - .env
-
-      frontend:
-        image: sjul/updockly:latest
-        restart: unless-stopped
-        container_name: updockly-frontend
-        depends_on:
-          - backend
-        volumes:
-          - certs:/etc/updockly/certs
-        env_file:
-          - .env
-        ports:
-          - "5174:8080"
-          - "5175:8443"
-
-      postgres:
-        image: postgres:16
-        restart: unless-stopped
-        container_name: updockly-postgres
-        environment:
-          POSTGRES_DB: updocklydb
-          POSTGRES_USER: updockly
-          POSTGRES_PASSWORD: updockly
-        volumes:
-          - postgres-data:/var/lib/postgresql/data
-        healthcheck:
-          test: ["CMD-SHELL", "pg_isready -U updockly -d updocklydb"]
-          interval: 10s
-          timeout: 5s
-          retries: 5
-
-      docker-proxy:
-        image: tecnativa/docker-socket-proxy:latest
-        restart: unless-stopped
-        container_name: updockly-docker-proxy
-        environment:
-          CONTAINERS: 1
-          INFO: 1
-          PING: 1
-          IMAGES: 1
-          DISTRIBUTION: 1
-          POST: 1
-          DELETE: 1
-        volumes:
-          - /var/run/docker.sock:/var/run/docker.sock:ro
-
-    volumes:
-      postgres-data:
-      certs:
-    ```
-
-2.  **Copy the repository environment file**:
-
-    ```bash
-    cp .env.example .env
-    ```
-
-3.  **Start the full stack with the create or provided `docker-compose.yml`**:
-
-    ```bash
-    docker compose up -d
-    ```
-
-4.  **Access the UI**:
+2.  **Access the UI**:
 
     - **HTTP**: http://localhost:5174\
 
-5.  **Follow the setup wizard** to create the admin account and configure the database.
+3.  **Follow the setup wizard** to create the admin account and configure the database.
 
 <p align="center">
   <img src="docs/screenshots/admin-creation.png" alt="Admin Creation Screenshot" width="45%">
@@ -170,10 +134,7 @@ This marks my first open-source release on GitHub. I have always learned by myse
 
 ## 🛰️ Agents Setup
 
-1.  Go to **Agents** in the dashboard.
-2.  Click **Create Agent** → copy install script.
-3.  Run script on the remote host.
-4.  (TLS Mode) Download `ca.crt`, place it next to the agent binary, restart it.
+👉 [Agent Deployment Guide](https://github.com/sjul1/Updockly/wiki/2.-Agent-Deployment)
 
 ---
 
@@ -196,13 +157,9 @@ This marks my first open-source release on GitHub. I have always learned by myse
 docker compose restart backend
 ```
 
----
-
 ### Agent TLS Verification Failed
 
 Replace agent `ca.crt` with the one downloaded from the UI.
-
----
 
 ### Certificate SAN Mismatch
 
@@ -211,8 +168,6 @@ Set:
     SERVER_SAN_IPS=<HOST_IP>
 
 Delete certs volume → restart backend.
-
----
 
 ### Frontend 502 Bad Gateway
 
@@ -228,7 +183,7 @@ docker compose logs -f backend
 
 - [x] Publish Docker image
 - [ ] Implement user roles and permissions for granular access control.
-- [ ] Write Wiki documentation
+- [x] Write Wiki documentation
 - [ ] Add support for more container orchestration platforms (e.g., Kubernetes).
 - [ ] Develop a more comprehensive notification system with customizable alerts.
 - [ ] Integrate with cloud providers for easier agent deployment and management.
