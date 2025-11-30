@@ -190,18 +190,7 @@ provide(
   computed(() => settingsForm.timezone || browserTimezone)
 );
 
-const baselineState = ref("");
 const dirtyRuntime = ref(false);
-
-const syncRuntimeBaseline = () => {
-  baselineState.value = JSON.stringify({
-    databaseUrl: settingsForm.databaseUrl,
-    clientOrigin: settingsForm.clientOrigin,
-    secretKey: settingsForm.secretKey,
-    timezone: settingsForm.timezone,
-  });
-  dirtyRuntime.value = false;
-};
 
 const dashboard = ref<DashboardStats | null>(null);
 
@@ -269,18 +258,7 @@ watch(
     settingsForm.secretKey,
     settingsForm.timezone,
   ],
-  (next) => {
-    if (isAuthenticated.value) {
-      return;
-    }
-    const current = JSON.stringify({
-      databaseUrl: next[0],
-      clientOrigin: next[1],
-      secretKey: next[2],
-      timezone: next[3],
-    });
-    dirtyRuntime.value = current !== baselineState.value;
-  },
+  () => {},
   { deep: true }
 );
 
@@ -314,6 +292,26 @@ const handleSetupComplete = async () => {
   needsSetup.value = false;
   activePanel.value = "login";
   notify("success", "Setup complete. Please log in.");
+};
+
+const checkSetupStatus = async () => {
+  try {
+    const status = await api.getSetupStatus();
+    needsSetup.value = status.needsSetup;
+  } catch (error) {
+    console.error("Failed to check setup status", error);
+  }
+};
+
+const preloadSetupRuntime = async () => {
+  try {
+    const runtime = await api.getSetupRuntimeSettings();
+    if (runtime.databaseUrl) {
+      settingsForm.databaseUrl = runtime.databaseUrl;
+    }
+  } catch (error) {
+    console.error("Failed to load setup runtime settings", error);
+  }
 };
 
 const lastHealthCheckAt = ref(0);
@@ -422,7 +420,6 @@ const logout = () => {
   dashboard.value = null;
   hydrateSettings(createDefaultSettings());
   activePanel.value = "login";
-  void fetchPublicRuntimeSettings();
 };
 
 const handleLogin = async (payload: { username: string; password: string }) => {
@@ -525,33 +522,6 @@ const loadSettings = fetchSettings;
 const fetchUserProfile = ensureSession;
 
 
-const fetchPublicRuntimeSettings = async () => {
-  try {
-    const runtime = await api.getPublicRuntimeSettings();
-    if (runtime.databaseUrl) {
-      settingsForm.databaseUrl = runtime.databaseUrl;
-    }
-    if (runtime.clientOrigin) {
-      settingsForm.clientOrigin = runtime.clientOrigin;
-    }
-    if (runtime.timezone) {
-      settingsForm.timezone = runtime.timezone;
-    }
-    if (runtime.secretKey) {
-      settingsForm.secretKey = runtime.secretKey;
-    }
-    if (runtime.needsSetup) {
-      needsSetup.value = true;
-    }
-    if (runtime.ssoEnabled) {
-      ssoEnabled.value = true;
-    }
-    syncRuntimeBaseline();
-  } catch (error) {
-    console.error("Unable to load runtime settings", error);
-  }
-};
-
 const saveSettings = async () => {
   if (
     settingsForm.notifications.recapTime &&
@@ -563,14 +533,7 @@ const saveSettings = async () => {
   loading.settings = true;
   try {
     if (!isAuthenticated.value) {
-      await api.updatePublicRuntimeSettings({
-        databaseUrl: settingsForm.databaseUrl,
-        clientOrigin: settingsForm.clientOrigin,
-        secretKey: settingsForm.secretKey,
-        timezone: settingsForm.timezone,
-      });
-      notify("success", "Runtime settings saved");
-      syncRuntimeBaseline();
+      notify("error", "Please sign in to update settings.");
       return;
     }
     const response = await api.updateSettings(settingsForm);
@@ -665,10 +628,12 @@ onMounted(async () => {
     // ensureSession will be called below
   }
 
-  await fetchPublicRuntimeSettings();
+  await checkSetupStatus();
   if (needsSetup.value) {
+    await preloadSetupRuntime();
     return;
   }
+
   const healthy = await checkHealth({ force: true });
   scheduleHealthPolling();
   if (healthy) {

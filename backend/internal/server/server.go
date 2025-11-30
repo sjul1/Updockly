@@ -136,14 +136,14 @@ func (s *Server) registerRoutes() {
 
 	setup := s.router.Group("/api/auth/setup")
 	{
+		setup.GET("/status", s.setupStatusHandler)
+		setup.GET("/runtime-settings", s.setupRuntimeSettingsHandler)
 		setup.POST("/generate", s.setupGenerateHandler)
 		setup.POST("/create", s.setupCreateHandler)
 		setup.POST("/test-db", s.setupTestDbHandler)
 	}
 
 	api := s.router.Group("/api")
-	api.GET("/runtime-settings", s.publicRuntimeSettings)
-	api.POST("/runtime-settings", s.publicRuntimeSettingsUpdate)
 	api.POST("/agents/heartbeat", s.agentHeartbeatHandler)
 	api.GET("/agents/commands/next", s.agentNextCommandHandler)
 	api.POST("/agents/commands/:id/report", s.agentCommandReportHandler)
@@ -289,65 +289,4 @@ func (s *Server) applyRuntimeSettings(settings config.RuntimeSettings) {
 		s.cfg.DBPort = port
 		s.cfg.DBName = db
 	}
-}
-
-func (s *Server) publicRuntimeSettings(c *gin.Context) {
-	settings := config.CurrentRuntimeSettings()
-	var count int64
-	if s.db != nil {
-		s.db.Model(&Account{}).Count(&count)
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"databaseUrl":  settings.DatabaseURL,
-		"clientOrigin": settings.ClientOrigin,
-		"timezone":     settings.Timezone,
-		"needsSetup":   s.db == nil || count == 0,
-		"ssoEnabled":   settings.SSO.Enabled,
-	})
-}
-
-type runtimeSettingsInput struct {
-	DatabaseURL  string `json:"databaseUrl"`
-	ClientOrigin string `json:"clientOrigin"`
-	SecretKey    string `json:"secretKey"`
-	Timezone     string `json:"timezone"`
-}
-
-func (s *Server) publicRuntimeSettingsUpdate(c *gin.Context) {
-	if s.db != nil {
-		var count int64
-		s.db.Model(&Account{}).Count(&count)
-		if count > 0 {
-			c.JSON(http.StatusForbidden, gin.H{"error": "setup already completed"})
-			return
-		}
-	}
-
-	var payload runtimeSettingsInput
-	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
-		return
-	}
-	settings := config.CurrentRuntimeSettings()
-	if payload.DatabaseURL != "" {
-		settings.DatabaseURL = payload.DatabaseURL
-	}
-	if payload.ClientOrigin != "" {
-		settings.ClientOrigin = payload.ClientOrigin
-	}
-	if payload.SecretKey != "" {
-		settings.SecretKey = payload.SecretKey
-	}
-	if payload.Timezone != "" {
-		settings.Timezone = payload.Timezone
-	}
-	if settings.Timezone == "" {
-		settings.Timezone = "UTC"
-	}
-	if err := config.SaveRuntimeSettings(config.EnvFilePath, settings); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	s.applyRuntimeSettings(settings)
-	c.JSON(http.StatusOK, gin.H{"message": "runtime settings updated"})
 }

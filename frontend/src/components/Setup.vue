@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, ref } from "vue";
+import { reactive, ref, watch } from "vue";
 import { api } from "../services/api";
 import { Lock, Shield, Key, Download } from "lucide-vue-next";
 
@@ -19,6 +19,15 @@ const step = ref<"config" | "admin">("config");
 const configForm = reactive({
   databaseUrl: props.settings.databaseUrl || "",
 });
+
+watch(
+  () => props.settings.databaseUrl,
+  (next) => {
+    if (next && !configForm.databaseUrl) {
+      configForm.databaseUrl = next;
+    }
+  }
+);
 
 const adminForm = reactive({
   username: "admin",
@@ -60,20 +69,7 @@ const handleConfigContinue = async () => {
   configError.value = "";
   try {
     await api.setupTestDb(configForm.databaseUrl);
-    await api.updatePublicRuntimeSettings({
-      databaseUrl: configForm.databaseUrl,
-      clientOrigin: window.location.origin,
-      secretKey: "", // Not updated here anymore
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-    });
-
-    // Re-check runtime settings to see if setup is now complete (e.g., accounts found)
-    const runtime = await api.getPublicRuntimeSettings();
-    if (!runtime.needsSetup) {
-      emit("setup-complete"); // Tell App.vue to redirect to login
-    } else {
-      step.value = "admin"; // Otherwise, continue to admin creation step
-    }
+    step.value = "admin";
   } catch (error) {
     configError.value =
       error instanceof Error ? error.message : "Configuration test failed";

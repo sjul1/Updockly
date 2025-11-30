@@ -347,25 +347,12 @@ export const api = {
     request<UpdateHistory[]>(`/history?limit=${limit}`),
   getRunningHistory: () => request<RunningHistoryEntry[]>(`/metrics/running-history`),
 
-  getPublicRuntimeSettings: () =>
+  getSetupStatus: () =>
+    request<{ needsSetup: boolean }>("/auth/setup/status", {}, true, 5000),
+  getSetupRuntimeSettings: () =>
     request<{
       databaseUrl?: string;
-      clientOrigin?: string;
-      secretKey?: string;
-      timezone?: string;
-      needsSetup?: boolean;
-      ssoEnabled?: boolean;
-    }>("/runtime-settings", {}, true, 5000),
-  updatePublicRuntimeSettings: (payload: {
-    databaseUrl: string;
-    clientOrigin: string;
-    secretKey: string;
-    timezone: string;
-  }) =>
-    request<unknown>("/runtime-settings", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
+    }>("/auth/setup/runtime-settings", {}, true, 5000),
 
   setupGenerate: (secretKey?: string) =>
     request<{ secret: string; qrCode: string }>("/auth/setup/generate", {

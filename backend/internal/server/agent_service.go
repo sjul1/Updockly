@@ -48,7 +48,9 @@ func (s *AgentService) Get(id string) (*Agent, error) {
 
 func (s *AgentService) GetByToken(token string) (*Agent, error) {
 	var agent Agent
-	if err := s.db.Where("token = ?", token).First(&agent).Error; err != nil {
+	// Silence "record not found" logs for noisy agent polling
+	silentDB := s.db.Session(&gorm.Session{Logger: logger.Discard})
+	if err := silentDB.Where("token = ?", token).First(&agent).Error; err != nil {
 		return nil, err
 	}
 	return &agent, nil

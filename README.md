@@ -190,6 +190,12 @@ docker compose logs -f backend
 
 ---
 
+Your support is huge for me, thank you!
+
+<a href="https://www.buymeacoffee.com/joul" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
+
+---
+
 ## 📜 License
 
 This project **Updockly** is licensed under the **GNU General Public License v3.0**.

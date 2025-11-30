@@ -511,6 +511,35 @@ type setupGeneratePayload struct {
 	SecretKey string `json:"secretKey"`
 }
 
+func (s *Server) setupStatusHandler(c *gin.Context) {
+	needsSetup := true
+	if s.db != nil {
+		var count int64
+		if err := s.db.Model(&Account{}).Count(&count).Error; err == nil {
+			needsSetup = count == 0
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"needsSetup": needsSetup,
+	})
+}
+
+func (s *Server) setupRuntimeSettingsHandler(c *gin.Context) {
+	// Only allow reading runtime hints before the first admin exists.
+	if s.db != nil {
+		var count int64
+		if err := s.db.Model(&Account{}).Count(&count).Error; err == nil && count > 0 {
+			c.JSON(http.StatusForbidden, gin.H{"error": "setup already completed"})
+			return
+		}
+	}
+
+	settings := config.CurrentRuntimeSettings()
+	c.JSON(http.StatusOK, gin.H{
+		"databaseUrl": settings.DatabaseURL,
+	})
+}
+
 func (s *Server) setupGenerateHandler(c *gin.Context) {
 	if s.db == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "database connection not established"})
