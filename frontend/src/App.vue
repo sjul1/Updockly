@@ -299,6 +299,15 @@ const checkSetupStatus = async () => {
     const status = await api.getSetupStatus();
     needsSetup.value = status.needsSetup;
   } catch (error) {
+    if (error instanceof ApiError && error.status === 403) {
+      needsSetup.value = true;
+      notify(
+        "error",
+        error.message ||
+          "Backend responded, but the browser blocked it due to CORS. Verify ALLOWED_ORIGIN on the server."
+      );
+      return;
+    }
     console.error("Failed to check setup status", error);
   }
 };
@@ -670,7 +679,9 @@ watch(backendOffline, (isOffline) => {
   <Setup
     v-if="needsSetup"
     :settings="settingsForm"
+    :theme="theme"
     @setup-complete="handleSetupComplete"
+    @toggle-theme="toggleTheme"
   />
   <div v-else class="flex min-h-screen bg-base-200 text-base-content">
     <!-- Mobile Header -->

@@ -1,18 +1,28 @@
 <script setup lang="ts">
-import { reactive, ref, watch } from "vue";
-import { api } from "../services/api";
-import { Lock, Shield, Key, Download } from "lucide-vue-next";
+import { computed, reactive, ref, watch, withDefaults } from "vue";
+import { ApiError, api } from "../services/api";
+import { Lock, Shield, Key, Download, Moon, Sun } from "lucide-vue-next";
+import { useToast } from "vue-toastification";
 
 const emit = defineEmits<{
   (e: "setup-complete"): void;
+  (e: "toggle-theme"): void;
 }>();
 
-const props = defineProps<{
-  settings: {
-    databaseUrl?: string;
-    secretKey?: string;
-  };
-}>();
+const props = withDefaults(
+  defineProps<{
+    settings: {
+      databaseUrl?: string;
+      secretKey?: string;
+    };
+    theme?: "light" | "dark";
+  }>(),
+  {
+    theme: "light",
+  }
+);
+
+const toast = useToast();
 
 const step = ref<"config" | "admin">("config");
 
@@ -71,8 +81,17 @@ const handleConfigContinue = async () => {
     await api.setupTestDb(configForm.databaseUrl);
     step.value = "admin";
   } catch (error) {
-    configError.value =
+    const isForbidden = error instanceof ApiError && error.status === 403;
+    const errorMessage =
       error instanceof Error ? error.message : "Configuration test failed";
+    const displayMessage = isForbidden
+      ? errorMessage ||
+        "Backend responded, but the browser blocked it due to CORS. Verify ALLOWED_ORIGIN on the server."
+      : errorMessage;
+    configError.value = displayMessage;
+    if (isForbidden) {
+      toast.error(displayMessage);
+    }
   } finally {
     loading.value = false;
   }
@@ -114,10 +133,26 @@ const createAdmin = async () => {
 const confirmRecoveryCodes = () => {
   emit("setup-complete");
 };
+
+const themeIcon = computed(() => (props.theme === "dark" ? Sun : Moon));
+const themeLabel = computed(() =>
+  props.theme === "dark" ? "Switch to light theme" : "Switch to dark theme"
+);
+const toggleTheme = () => emit("toggle-theme");
 </script>
 
 <template>
-  <div class="flex min-h-screen items-center justify-center bg-base-200">
+  <div
+    class="flex min-h-screen items-center justify-center bg-base-200 relative"
+  >
+    <button
+      class="btn btn-ghost btn-sm absolute right-6 top-6 rounded-full shadow-sm"
+      type="button"
+      :aria-label="themeLabel"
+      @click="toggleTheme"
+    >
+      <component :is="themeIcon" class="w-4 h-4" />
+    </button>
     <div
       class="w-full max-w-lg rounded-3xl bg-base-100/90 p-8 shadow-xl backdrop-blur"
     >
