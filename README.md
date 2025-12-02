@@ -15,11 +15,11 @@ This marks my first open-source release on GitHub. I have always learned by myse
 
 ## ✨ Key Features
 
-- 🛡️ **Secure by Design** -- Login with JWT, optional 2FA (TOTP), and OIDC SSO.
-- 🐳 **Multi-Host Management** -- Control containers on the main server and remote hosts via agents.
-- 🔄 **Automatic Updates & Rollbacks** -- Scheduled image pulls, safe recreation, and one-click rollback.
-- 📈 **Live Monitoring** -- Real-time container status, logs, and action history.
-- ⚙️ **Configurable & Self-Hosted** -- TLS support, runtime configuration, and `.env`-based settings.
+- 🛡️ **Secure by Design**: Login with JWT, optional 2FA (TOTP), and OIDC SSO.
+- 🐳 **Multi-Host Management**: Control containers on the main server and remote hosts via agents.
+- 🔄 **Automatic Updates & Rollbacks**: Scheduled image pulls, safe recreation, and one-click rollback.
+- 📈 **Live Monitoring**: Real-time container status, logs, and action history.
+- ⚙️ **Configurable & Self-Hosted**: TLS support, runtime configuration, and `.env`-based settings.
 
 <p align="center">
   <img src="docs/screenshots/containers.png" alt="Containers Screenshot" width="45%">
