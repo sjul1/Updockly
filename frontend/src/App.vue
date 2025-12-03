@@ -60,6 +60,7 @@ const toggleTheme = () => {
 const browserTimezone =
   Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
+const isInitializing = ref(true);
 const healthStatus = ref("Checking...");
 const backendVersion = ref("");
 const backendOffline = ref(false);
@@ -298,6 +299,7 @@ const checkSetupStatus = async () => {
   try {
     const status = await api.getSetupStatus();
     needsSetup.value = status.needsSetup;
+    return true;
   } catch (error) {
     if (error instanceof ApiError && error.status === 403) {
       needsSetup.value = true;
@@ -306,9 +308,10 @@ const checkSetupStatus = async () => {
         error.message ||
           "Backend responded, but the browser blocked it due to CORS. Verify ALLOWED_ORIGIN on the server."
       );
-      return;
+      return true;
     }
     console.error("Failed to check setup status", error);
+    return false;
   }
 };
 
@@ -347,6 +350,17 @@ const checkHealth = async (options?: HealthOptions) => {
       const result = await api.healthCheck();
       healthStatus.value = result.status;
       backendVersion.value = result.version;
+
+      if (wasOffline) {
+        const setupCheckOk = await checkSetupStatus();
+        if (!setupCheckOk) {
+          throw new Error("Backend is online but setup status check failed");
+        }
+        if (needsSetup.value) {
+          await preloadSetupRuntime();
+        }
+      }
+
       backendOffline.value = false;
       backendErrorMessage.value = "";
       setOfflineMode(false);
@@ -637,18 +651,22 @@ onMounted(async () => {
     // ensureSession will be called below
   }
 
-  await checkSetupStatus();
-  if (needsSetup.value) {
-    await preloadSetupRuntime();
-    return;
-  }
+  try {
+    await checkSetupStatus();
+    if (needsSetup.value) {
+      await preloadSetupRuntime();
+      return;
+    }
 
-  const healthy = await checkHealth({ force: true });
-  scheduleHealthPolling();
-  if (healthy) {
-    await ensureSession();
+    const healthy = await checkHealth({ force: true });
+    scheduleHealthPolling();
+    if (healthy) {
+      await ensureSession();
+    }
+    startDataPolling();
+  } finally {
+    isInitializing.value = false;
   }
-  startDataPolling();
 });
 
 onBeforeUnmount(() => {
@@ -676,8 +694,11 @@ watch(backendOffline, (isOffline) => {
 </script>
 
 <template>
+  <div v-if="isInitializing" class="flex h-screen items-center justify-center bg-base-200">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+  </div>
   <Setup
-    v-if="needsSetup"
+    v-else-if="needsSetup"
     :settings="settingsForm"
     :theme="theme"
     @setup-complete="handleSetupComplete"

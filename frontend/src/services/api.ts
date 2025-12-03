@@ -146,7 +146,8 @@ async function request<T>(
   timeout = 15000
 ): Promise<T> {
   const isHealthCheck = endpoint === "/health";
-  if (offlineMode && !isHealthCheck) {
+  const isSetupCheck = endpoint === "/auth/setup/status" || endpoint === "/auth/setup/runtime-settings";
+  if (offlineMode && !isHealthCheck && !isSetupCheck) {
     throw new ApiError("Backend offline", 503);
   }
 
@@ -197,7 +198,7 @@ async function request<T>(
 }
 
 export const api = {
-  healthCheck: () => request<HealthResponse>("/health", {}, true, 5000),
+  healthCheck: () => request<HealthResponse>("/health", {}, true, 500),
 
   login: (credentials: loginRequest) =>
     request<LoginResponse>(
@@ -348,11 +349,11 @@ export const api = {
   getRunningHistory: () => request<RunningHistoryEntry[]>(`/metrics/running-history`),
 
   getSetupStatus: () =>
-    request<{ needsSetup: boolean }>("/auth/setup/status", {}, true, 5000),
+    request<{ needsSetup: boolean }>("/auth/setup/status", {}, true, 500),
   getSetupRuntimeSettings: () =>
     request<{
       databaseUrl?: string;
-    }>("/auth/setup/runtime-settings", {}, true, 5000),
+    }>("/auth/setup/runtime-settings", {}, true, 500),
 
   setupGenerate: (secretKey?: string) =>
     request<{ secret: string; qrCode: string }>("/auth/setup/generate", {

@@ -79,12 +79,12 @@ Updockly is configured using environment variables. You can set these in your `.
 | Variable             | Description                                                                                      | Default Value                                                            |
 | :------------------- | :----------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------- |
 | `DATABASE_URL`       | Connection string for the database (PostgreSQL or SQLite).                                       | `postgres://updockly:updockly@localhost:5432/updocklydb?sslmode=disable` |
-| `SECRET_KEY`         | **Important.** Key used for encryption and JWT signing. Must be strong and random in production. | `dev-secret-key`                                                         |
-| `CLIENT_ORIGIN`      | The URL where the frontend is accessible. Used for CORS and redirects.                           | (Empty)                                                                  |
+| `SECRET_KEY`         | **Important.** Key used for encryption and JWT signing. Must be strong and random in production. | `change_me_to_a_secure_random_string`                                    |
+| `CLIENT_ORIGIN`      | The URL where the frontend is accessible. Used for CORS and redirects.                           | `http://localhost:8080`                                                  |
 | `SERVER_ADDR`        | The address and port the backend server listens on.                                              | `:5000`                                                                  |
 | `TIMEZONE`           | Timezone used for scheduling and logging (e.g., `Europe/Paris`).                                 | `UTC`                                                                    |
-| `SERVER_SAN_IPS`     | Comma-separated list of IP addresses to add to the self-signed certificate.                      | (Empty)                                                                  |
-| `SERVER_SAN_DOMAINS` | Comma-separated list of domains to add to the self-signed certificate.                           | (Empty)                                                                  |
+| `SERVER_SAN_IPS`     | Comma-separated list of IP addresses to add to the self-signed certificate.                      | `127.0.0.1,0.0.0.0`                                                      |
+| `SERVER_SAN_DOMAINS` | Comma-separated list of domains to add to the self-signed certificate.                           | `localhost,backend,updockly-backend`                                     |
 
 ## Single Sign-On (SSO)
 
@@ -108,6 +108,18 @@ Updockly is configured using environment variables. You can set these in your `.
 | `NOTIFICATION_ON_FAILURE`      | Send notification on failed update (`true`/`false`).     | (Empty)       |
 | `NOTIFICATION_RECAP_TIME`      | Time for daily recap (HH:MM).                            | (Empty)       |
 | `NOTIFICATION_CRON`            | Cron expression for recap schedule.                      | (Empty)       |
+
+## SMTP
+
+| Variable        | Description                                      | Default Value |
+| :-------------- | :----------------------------------------------- | :------------ |
+| `SMTP_ENABLED`  | Enable or disable SMTP (`true`/`false`).         | `false`       |
+| `SMTP_HOST`     | The SMTP server hostname.                        | (Empty)       |
+| `SMTP_PORT`     | The SMTP server port.                            | (Empty)       |
+| `SMTP_USER`     | The username for SMTP authentication.            | (Empty)       |
+| `SMTP_PASSWORD` | The password for SMTP authentication.            | (Empty)       |
+| `SMTP_FROM`     | The sender email address.                        | (Empty)       |
+| `SMTP_TLS`      | Enable or disable TLS for SMTP (`true`/`false`). | (Empty)       |
 
 ## File Secrets (Docker Secrets)
 

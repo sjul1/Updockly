@@ -115,7 +115,12 @@ func CurrentRuntimeSettings() RuntimeSettings {
 	}
 	return RuntimeSettings{
 		DatabaseURL:  getEnvWithFile("DATABASE_URL"),
-		ClientOrigin: getEnvWithFile("CLIENT_ORIGIN"),
+		ClientOrigin: func() string {
+			if co := getEnvWithFile("CLIENT_ORIGIN"); co != "" {
+				return co
+			}
+			return "http://localhost:8080"
+		}(),
 		SecretKey:    getEnvWithFile("SECRET_KEY"),
 		Timezone:     getEnvWithFile("TIMEZONE"),
 		AutoPrune:    boolFromEnv("AUTO_PRUNE_IMAGES"),
