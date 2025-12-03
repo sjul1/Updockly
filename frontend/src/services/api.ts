@@ -64,6 +64,7 @@ export interface Container {
   Status: string;
   AutoUpdate: boolean;
   UpdateAvailable?: boolean;
+  Ports?: string[];
 }
 
 export interface UpdateHistory {
@@ -109,6 +110,8 @@ export interface Agent {
   createdAt?: string;
   updatedAt?: string;
   containers?: AgentContainer[];
+  cpu?: number;
+  memory?: number;
 }
 
 export type ApiAgent = Agent;
@@ -267,9 +270,14 @@ export const api = {
 
   getContainers: () => request<Container[]>("/containers"),
   getHostInfo: () =>
-    request<{ dockerVersion: string; platform: string; hostname: string; lastSeen: string }>(
-      "/containers/host-info"
-    ),
+    request<{
+      dockerVersion: string;
+      platform: string;
+      hostname: string;
+      lastSeen: string;
+      cpu?: number;
+      memory?: number;
+    }>("/containers/host-info"),
   checkContainerUpdate: (id: string) =>
     request<{ updateAvailable: boolean }>(`/containers/${id}/check-update`, {
       method: "POST",

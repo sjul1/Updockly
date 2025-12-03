@@ -11,13 +11,14 @@ import (
 )
 
 type containerResponse struct {
-	ID              string `json:"ID"`
-	Name            string `json:"Name"`
-	Image           string `json:"Image"`
-	State           string `json:"State"`
-	Status          string `json:"Status"`
-	AutoUpdate      bool   `json:"AutoUpdate"`
-	UpdateAvailable bool   `json:"UpdateAvailable"`
+	ID              string   `json:"ID"`
+	Name            string   `json:"Name"`
+	Image           string   `json:"Image"`
+	State           string   `json:"State"`
+	Status          string   `json:"Status"`
+	AutoUpdate      bool     `json:"AutoUpdate"`
+	UpdateAvailable bool     `json:"UpdateAvailable"`
+	Ports           []string `json:"Ports"`
 }
 
 func (s *Server) listContainers(c *gin.Context) {
@@ -31,7 +32,16 @@ func (s *Server) listContainers(c *gin.Context) {
 
 	resp := make([]containerResponse, 0, len(containers))
 	for _, cont := range containers {
-		resp = append(resp, containerResponse(cont))
+		resp = append(resp, containerResponse{
+			ID:              cont.ID,
+			Name:            cont.Name,
+			Image:           cont.Image,
+			State:           cont.State,
+			Status:          cont.Status,
+			AutoUpdate:      cont.AutoUpdate,
+			UpdateAvailable: cont.UpdateAvailable,
+			Ports:           cont.Ports,
+		})
 	}
 
 	c.JSON(http.StatusOK, resp)

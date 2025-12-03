@@ -107,6 +107,7 @@ func (s *Server) configureMiddleware() {
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-Agent-Token"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
+		AllowOriginFunc:  func(origin string) bool { return true },
 	}))
 
 	// Security headers middleware

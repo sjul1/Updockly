@@ -144,6 +144,7 @@ dist
 .pnp.*
 
 backend/tmp
+backend/backend
 secrets/
 report.md
 updockly-agent/docker-compose.yml
@@ -151,3 +152,4 @@ updockly-agent/agent-data
 docker-compose-dev.yml
 tmp/
 scripts/
+updockly-agent/agent

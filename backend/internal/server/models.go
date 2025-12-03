@@ -193,6 +193,8 @@ type Agent struct {
 	LastSeen      *time.Time            `json:"lastSeen,omitempty"`
 	Containers    ContainerSnapshotList `gorm:"type:jsonb;serializer:json" json:"-"`
 	TLSEnabled    bool                  `json:"tlsEnabled"`
+	CPU           float64               `json:"cpu"`
+	Memory        float64               `json:"memory"`
 	CreatedAt     time.Time             `json:"createdAt"`
 	UpdatedAt     time.Time             `json:"updatedAt"`
 }

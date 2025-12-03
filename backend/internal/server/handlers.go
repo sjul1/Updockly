@@ -847,6 +847,8 @@ type agentResponse struct {
 	LastSeen      *time.Time          `json:"lastSeen,omitempty"`
 	Token         string              `json:"token,omitempty"`
 	Containers    []ContainerSnapshot `json:"containers,omitempty"`
+	CPU           float64             `json:"cpu"`
+	Memory        float64             `json:"memory"`
 	CreatedAt     time.Time           `json:"createdAt"`
 	UpdatedAt     time.Time           `json:"updatedAt"`
 }
@@ -885,6 +887,8 @@ func toAgentResponse(agent Agent, includeToken bool) agentResponse {
 		Platform:      agent.Platform,
 		LastSeen:      agent.LastSeen,
 		Containers:    decodeContainers(agent),
+		CPU:           agent.CPU,
+		Memory:        agent.Memory,
 		CreatedAt:     agent.CreatedAt,
 		UpdatedAt:     agent.UpdatedAt,
 	}
@@ -1120,6 +1124,8 @@ type agentHeartbeatPayload struct {
 	DockerVersion string              `json:"dockerVersion"`
 	Platform      string              `json:"platform"`
 	Containers    []ContainerSnapshot `json:"containers"`
+	CPU           float64             `json:"cpu"`
+	Memory        float64             `json:"memory"`
 }
 
 func (s *Server) agentHeartbeatHandler(c *gin.Context) {
@@ -1163,6 +1169,8 @@ func (s *Server) agentHeartbeatHandler(c *gin.Context) {
 	s.clearAgentOfflineNotified(agent.ID)
 	updates := map[string]interface{}{
 		"last_seen": now,
+		"cpu":       payload.CPU,
+		"memory":    payload.Memory,
 	}
 	if payload.Hostname != "" {
 		agent.Hostname = payload.Hostname

@@ -18,7 +18,7 @@ This marks my first open-source release on GitHub. I have always learned by myse
 - 🛡️ **Secure by Design**: Login with JWT, optional 2FA (TOTP), and OIDC SSO.
 - 🐳 **Multi-Host Management**: Control containers on the main server and remote hosts via agents.
 - 🔄 **Automatic Updates & Rollbacks**: Scheduled image pulls, safe recreation, and one-click rollback.
-- 📈 **Live Monitoring**: Real-time container status, logs, and action history.
+- 📈 **Live Monitoring**: Real-time container status.
 - ⚙️ **Configurable & Self-Hosted**: TLS support, runtime configuration, and `.env`-based settings.
 
 <p align="center">
@@ -46,7 +46,7 @@ This marks my first open-source release on GitHub. I have always learned by myse
 
 - **Multi-Host Support**: Control local and remote Docker hosts.
 - **Remote Agents**: Lightweight Go agent with encrypted TLS communication.
-- **Live Monitoring**: Real-time CPU, memory, and status indicators.
+- **Live Monitoring**: Real-time status indicators.
 - **Container Actions**: Start, stop, restart, logs, history.
 
 ---
@@ -166,7 +166,7 @@ Most variables support appending `_FILE` to the name to read the value from a fi
 **Fix**: Restart the backend:
 
 ```bash
-docker compose restart backend
+docker compose restart updockly-backend
 ```
 
 ### Agent TLS Verification Failed
@@ -186,7 +186,7 @@ Delete certs volume → restart backend.
 Backend may still be booting. Check logs:
 
 ```bash
-docker compose logs -f backend
+docker compose logs -f updockly-backend
 ```
 
 ---

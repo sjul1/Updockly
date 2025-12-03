@@ -19,6 +19,8 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/shirou/gopsutil/v3/cpu"
+	"github.com/shirou/gopsutil/v3/mem"
 )
 
 type heartbeatPayload struct {
@@ -27,6 +29,8 @@ type heartbeatPayload struct {
 	DockerVersion string              `json:"dockerVersion,omitempty"`
 	Platform      string              `json:"platform,omitempty"`
 	Containers    []containerSnapshot `json:"containers,omitempty"`
+	CPU           float64             `json:"cpu,omitempty"`
+	Memory        float64             `json:"memory,omitempty"`
 }
 
 type containerSnapshot struct {
@@ -177,6 +181,13 @@ func gatherDockerInfo(agentName, dockerHost, userAgent string) heartbeatPayload 
 	}
 	if hostname == "" {
 		payload.Hostname = agentName
+	}
+
+	if c, err := cpu.Percent(0, false); err == nil && len(c) > 0 {
+		payload.CPU = c[0]
+	}
+	if m, err := mem.VirtualMemory(); err == nil {
+		payload.Memory = m.UsedPercent
 	}
 
 	if containers, err := cli.ContainerList(ctx, container.ListOptions{All: true}); err == nil {

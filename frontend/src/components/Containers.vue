@@ -30,6 +30,9 @@ import {
   MoreVertical,
   Square,
   FileText,
+  Network,
+  Cpu,
+  MemoryStick,
 } from "lucide-vue-next";
 import { useToast } from "vue-toastification";
 
@@ -77,6 +80,67 @@ const toast = useToast();
 const logsModalOpen = ref(false);
 const logsModalContent = ref("");
 const logsModalTitle = ref("");
+const portsModalHost = ref<string | null>(null);
+const portsFilter = ref("");
+
+const allPorts = computed(() => {
+  const list: { host: string; container: string; ports: string[]; isAgent: boolean }[] = [];
+
+  // Local
+  containers.value.forEach((c) => {
+    if (c.Ports && c.Ports.length > 0) {
+      list.push({
+        host: hostInfo.hostname || "Localhost",
+        container: c.Name,
+        ports: c.Ports,
+        isAgent: false,
+      });
+    }
+  });
+
+  // Agents
+  agentContainers.value.forEach((a) => {
+    if (a.containers) {
+      a.containers.forEach((c) => {
+        if (c.ports && c.ports.length > 0) {
+          list.push({
+            host: a.name,
+            container: c.name || c.id,
+            ports: c.ports,
+            isAgent: true,
+          });
+        }
+      });
+    }
+  });
+
+  return list;
+});
+
+const currentPorts = computed(() => {
+  if (!portsModalHost.value) return [];
+  const host = portsModalHost.value;
+  const filter = portsFilter.value.toLowerCase();
+  return allPorts.value.filter((p) => {
+    if (p.host !== host) return false;
+    if (!filter) return true;
+    return (
+      p.container.toLowerCase().includes(filter) ||
+      p.ports.some((port) => port.toLowerCase().includes(filter))
+    );
+  });
+});
+
+const openPortsModal = (host: string) => {
+  portsModalHost.value = host;
+  portsFilter.value = "";
+};
+
+const highlightMatch = (text: string, filter: string) => {
+  if (!filter) return text;
+  const regex = new RegExp(`(${filter})`, "gi");
+  return text.replace(regex, '<span class="bg-warning/30 font-bold">$1</span>');
+};
 const progress = reactive(new Map<string, Progress[]>());
 const refreshTimer = ref<number | null>(null);
 const REFRESH_INTERVAL = 30000;
@@ -343,6 +407,8 @@ const fetchHostInfo = async () => {
     hostInfo.platform = info.platform;
     hostInfo.hostname = info.hostname;
     hostInfo.lastSeen = info.lastSeen;
+    (hostInfo as any).cpu = info.cpu;
+    (hostInfo as any).memory = info.memory;
   } catch (error) {
     console.error("Failed to load host info", error);
   }
@@ -434,6 +500,7 @@ const autoRefreshTick = () => {
   if (loading.value) return;
   void fetchContainers({ silent: true });
   void fetchAgentContainers({ silent: true });
+  void fetchHostInfo();
 };
 
 const hasPendingAgentActions = () =>
@@ -942,6 +1009,19 @@ const sortAgentContainers = (agentId: string, key: keyof AgentContainer) => {
         <div
           class="flex items-center gap-2 mt-2 sm:mt-0 self-start sm:self-center"
         >
+          <div v-if="(hostInfo as any).cpu !== undefined" class="badge badge-ghost gap-1 font-mono text-xs hidden sm:inline-flex">
+            <Cpu class="w-3 h-3" /> {{ ((hostInfo as any).cpu).toFixed(1) }}%
+          </div>
+          <div v-if="(hostInfo as any).memory !== undefined" class="badge badge-ghost gap-1 font-mono text-xs hidden sm:inline-flex">
+            <MemoryStick class="w-3 h-3" /> {{ ((hostInfo as any).memory).toFixed(1) }}%
+          </div>
+          <button
+            class="btn btn-ghost btn-xs"
+            @click.stop="openPortsModal(hostInfo.hostname || 'Localhost')"
+            title="View Port Mapping"
+          >
+            <Network class="w-4 h-4" />
+          </button>
           <span class="badge badge-ghost gap-1">
             {{ containers.length || 0 }} containers
           </span>
@@ -1347,6 +1427,19 @@ const sortAgentContainers = (agentId: string, key: keyof AgentContainer) => {
           <div
             class="flex items-center gap-2 mt-2 sm:mt-0 self-start sm:self-center"
           >
+            <div v-if="(agent as any).cpu !== undefined" class="badge badge-ghost gap-1 font-mono text-xs hidden sm:inline-flex">
+              <Cpu class="w-3 h-3" /> {{ ((agent as any).cpu).toFixed(1) }}%
+            </div>
+            <div v-if="(agent as any).memory !== undefined" class="badge badge-ghost gap-1 font-mono text-xs hidden sm:inline-flex">
+              <MemoryStick class="w-3 h-3" /> {{ ((agent as any).memory).toFixed(1) }}%
+            </div>
+            <button
+              class="btn btn-ghost btn-xs"
+              @click.stop="openPortsModal(agent.name)"
+              title="View Port Mapping"
+            >
+              <Network class="w-4 h-4" />
+            </button>
             <span class="badge badge-ghost gap-1">
               {{ agent.containers?.length || 0 }} containers
             </span>
@@ -1958,6 +2051,81 @@ const sortAgentContainers = (agentId: string, key: keyof AgentContainer) => {
         </template>
       </div>
     </div>
+  </Teleport>
+
+  <!-- Port Mapping Modal (Updated) -->
+  <Teleport to="body">
+    <dialog v-if="portsModalHost" class="modal modal-open">
+      <div class="modal-box max-w-4xl">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="font-bold text-lg flex items-center gap-2">
+            <Network class="w-5 h-5" /> Port Mapping: {{ portsModalHost }}
+          </h3>
+          <button class="btn btn-sm btn-circle btn-ghost" @click="portsModalHost = null">
+            <X class="w-4 h-4" />
+          </button>
+        </div>
+        
+        <div class="mb-4">
+          <div class="form-control w-full">
+            <div class="relative">
+              <input
+                type="text"
+                placeholder="Filter by container name or port..."
+                class="input input-bordered w-full pr-10 rounded-xl"
+                v-model="portsFilter"
+              />
+              <button
+                v-if="portsFilter"
+                class="btn btn-ghost btn-xs absolute right-2 top-1/2 -translate-y-1/2"
+                @click="portsFilter = ''"
+              >
+                <X class="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto max-h-[60vh]">
+          <table class="table table-zebra w-full">
+            <thead>
+              <tr>
+                <th>Container</th>
+                <th>Ports</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(item, idx) in currentPorts" :key="idx">
+                <td class="font-mono text-sm">
+                  <div v-html="highlightMatch(item.container, portsFilter)"></div>
+                </td>
+                <td>
+                  <div class="flex flex-wrap gap-1">
+                    <span
+                      v-for="p in item.ports"
+                      :key="p"
+                      class="badge badge-outline font-mono text-xs"
+                      v-html="highlightMatch(p, portsFilter)"
+                    ></span>
+                  </div>
+                </td>
+              </tr>
+              <tr v-if="currentPorts.length === 0">
+                <td colspan="2" class="text-center py-8 text-base-content/60">
+                  {{ portsFilter ? 'No matching ports found.' : 'No ports exposed.' }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="modal-action">
+          <button class="btn" @click="portsModalHost = null">Close</button>
+        </div>
+      </div>
+      <form method="dialog" class="modal-backdrop" @click="portsModalHost = null">
+        <button aria-label="close"></button>
+      </form>
+    </dialog>
   </Teleport>
 
   <dialog v-if="logsModalOpen" class="modal modal-open">

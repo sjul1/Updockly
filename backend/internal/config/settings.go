@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-const EnvFilePath = ".env"
+var EnvFilePath = ".env"
 
 type NotificationSettings struct {
 	WebhookURL       string       `json:"webhookUrl"`

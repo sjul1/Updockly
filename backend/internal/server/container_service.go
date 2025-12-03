@@ -14,20 +14,28 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
+	"github.com/shirou/gopsutil/v3/cpu"
+	"github.com/shirou/gopsutil/v3/mem"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
 
 type ContainerService struct {
-	db *gorm.DB
+	db                 *gorm.DB
+	dockerClientFactory func() (client.APIClient, error)
 }
 
 func NewContainerService(db *gorm.DB) *ContainerService {
-	return &ContainerService{db: db}
+	return &ContainerService{
+		db: db,
+		dockerClientFactory: func() (client.APIClient, error) {
+			return client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+		},
+	}
 }
 
-func (s *ContainerService) getDockerClient() (*client.Client, error) {
-	return client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+func (s *ContainerService) getDockerClient() (client.APIClient, error) {
+	return s.dockerClientFactory()
 }
 
 type ContainerData struct {
@@ -38,6 +46,7 @@ type ContainerData struct {
 	Status          string
 	AutoUpdate      bool
 	UpdateAvailable bool
+	Ports           []string
 }
 
 func (s *ContainerService) ListContainers(ctx context.Context) ([]ContainerData, error) {
@@ -94,6 +103,15 @@ func (s *ContainerService) ListContainers(ctx context.Context) ([]ContainerData,
 			_ = s.db.Session(&gorm.Session{Logger: logger.Discard}).Save(&pref).Error
 		}
 
+		var ports []string
+		for _, p := range cont.Ports {
+			if p.PublicPort > 0 {
+				ports = append(ports, fmt.Sprintf("%d->%d/%s", p.PublicPort, p.PrivatePort, p.Type))
+			} else {
+				ports = append(ports, fmt.Sprintf("%d/%s", p.PrivatePort, p.Type))
+			}
+		}
+
 		result = append(result, ContainerData{
 			ID:              cont.ID,
 			Name:            name,
@@ -102,6 +120,7 @@ func (s *ContainerService) ListContainers(ctx context.Context) ([]ContainerData,
 			Status:          cont.Status,
 			AutoUpdate:      pref.AutoUpdate,
 			UpdateAvailable: pref.UpdateAvailable,
+			Ports:           ports,
 		})
 
 		// Ensure name is set in DB if missing
@@ -113,7 +132,7 @@ func (s *ContainerService) ListContainers(ctx context.Context) ([]ContainerData,
 	return result, nil
 }
 
-func (s *ContainerService) GetHostInfo(ctx context.Context) (map[string]string, error) {
+func (s *ContainerService) GetHostInfo(ctx context.Context) (map[string]interface{}, error) {
 	cli, err := s.getDockerClient()
 	if err != nil {
 		return nil, err
@@ -142,12 +161,21 @@ func (s *ContainerService) GetHostInfo(ctx context.Context) (map[string]string, 
 		platform = "unknown"
 	}
 
-	return map[string]string{
+	result := map[string]interface{}{
 		"dockerVersion": dockerVersion,
 		"platform":      platform,
 		"hostname":      hostname,
 		"lastSeen":      time.Now().Format(time.RFC3339),
-	}, nil
+	}
+
+	if c, err := cpu.Percent(0, false); err == nil && len(c) > 0 {
+		result["cpu"] = c[0]
+	}
+	if m, err := mem.VirtualMemory(); err == nil {
+		result["memory"] = m.UsedPercent
+	}
+
+	return result, nil
 }
 
 func (s *ContainerService) CheckUpdate(ctx context.Context, containerID string) (bool, error) {
@@ -430,7 +458,7 @@ func (s *ContainerService) RollbackContainer(ctx context.Context, id, targetImag
 }
 
 // Helper function moved from updater.go (or duplicated/adapted)
-func isUpdateAvailableWithClient(ctx context.Context, cli *client.Client, containerID string) (bool, error) {
+func isUpdateAvailableWithClient(ctx context.Context, cli client.APIClient, containerID string) (bool, error) {
 	containerInfo, err := cli.ContainerInspect(ctx, containerID)
 	if err != nil {
 		return false, fmt.Errorf("failed to inspect container %s: %w", containerID, err)
@@ -457,7 +485,7 @@ func isUpdateAvailableWithClient(ctx context.Context, cli *client.Client, contai
 	return true, nil
 }
 
-func resolveImageDigest(ctx context.Context, cli *client.Client, ref string) string {
+func resolveImageDigest(ctx context.Context, cli client.APIClient, ref string) string {
 	if strings.TrimSpace(ref) == "" {
 		return ""
 	}
