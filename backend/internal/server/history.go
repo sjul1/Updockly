@@ -23,7 +23,7 @@ func (s *Server) listUpdateHistory(c *gin.Context) {
 		}
 	}
 
-	var rows []UpdateHistory
+	rows := []UpdateHistory{}
 	if err := s.db.Order("created_at DESC").Limit(limit).Find(&rows).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load history"})
 		return

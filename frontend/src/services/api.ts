@@ -6,6 +6,8 @@ const API_BASE_URL = "/api";
 
 let authToken: string | null = null;
 let offlineMode = false;
+type UnauthorizedCallback = () => void;
+let onUnauthorized: UnauthorizedCallback | null = null;
 
 export const setAuthToken = (token: string | null) => {
   authToken = token;
@@ -13,6 +15,10 @@ export const setAuthToken = (token: string | null) => {
 
 export const setOfflineMode = (offline: boolean) => {
   offlineMode = offline;
+};
+
+export const setOnUnauthorized = (cb: UnauthorizedCallback) => {
+  onUnauthorized = cb;
 };
 
 export class ApiError extends Error {
@@ -180,6 +186,9 @@ async function request<T>(
 
     const contentType = response.headers.get("content-type");
     if (!response.ok) {
+      if (response.status === 401) {
+        onUnauthorized?.();
+      }
       let message = "An error occurred";
       if (contentType && contentType.includes("application/json")) {
         const errorData = await response.json();
@@ -201,6 +210,7 @@ async function request<T>(
 }
 
 export const api = {
+  setOnUnauthorized,
   healthCheck: () => request<HealthResponse>("/health", {}, true, 500),
 
   login: (credentials: loginRequest) =>
@@ -265,6 +275,25 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ code, password }),
     }),
+
+  initiateReset2FA: (username: string, recoveryCode: string, password: string) =>
+    request<{
+      secret: string;
+      qrCode: string;
+      tempToken: string;
+    }>("/auth/2fa/reset/init", {
+      method: "POST",
+      body: JSON.stringify({ username, recoveryCode, password }),
+    }, true),
+
+  finalizeReset2FA: (tempToken: string, code: string) =>
+    request<{
+      message: string;
+      recoveryCodes: string[];
+    }>("/auth/2fa/reset/finalize", {
+      method: "POST",
+      body: JSON.stringify({ tempToken, code }),
+    }, true),
 
   getDashboard: () => request<DashboardStats>("/dashboard"),
 

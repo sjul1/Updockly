@@ -485,9 +485,13 @@ const handle2FAVerify = async (code: string) => {
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) {
       notify("error", "Invalid code. Please try again.");
-      throw error; // Re-throw so the Login component can handle the failure count
+    } else {
+      // Re-throw other errors so Login component handles failedAttempts count
+      // But we can still notify generic error
+      const msg = error instanceof Error ? error.message : "Verification failed";
+      notify("error", msg);
     }
-    handleApiError(error, "Failed to verify 2FA code");
+    throw error; 
   } finally {
     loading.login = false;
   }
@@ -641,11 +645,23 @@ const startDataPolling = () => {
 
 onMounted(async () => {
   applyTheme();
+
+  api.setOnUnauthorized(() => {
+    if (isAuthenticated.value) {
+      notify("error", "Session expired. Please sign in again.");
+      logout();
+    }
+  });
   
   // Check for SSO token in URL
   const url = new URL(window.location.href);
   const token = url.searchParams.get("token");
-  if (token) {
+
+  // If we are on the reset-password route, force logout so the Login component can handle the reset token
+  if (url.pathname === "/reset-password" || url.pathname === "/reset-password/") {
+    persistToken(null);
+    currentUser.value = null;
+  } else if (token) {
     persistToken(token);
     window.history.replaceState({}, document.title, "/");
     // ensureSession will be called below
@@ -685,6 +701,7 @@ watch(backendOffline, (isOffline) => {
   setOfflineMode(isOffline);
   if (isOffline) {
     stopDataPolling();
+    logout();
     return;
   }
   if (isAuthenticated.value) {

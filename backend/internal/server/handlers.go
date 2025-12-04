@@ -281,6 +281,66 @@ type codePayload struct {
 	Code string `json:"code"`
 }
 
+type reset2FAInitPayload struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+	Code     string `json:"recoveryCode"`
+}
+
+func (s *Server) reset2FAInitHandler(c *gin.Context) {
+	var payload reset2FAInitPayload
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+		return
+	}
+
+	secret, qrCode, token, err := s.authService.InitiateReset2FA(payload.Username, payload.Code, payload.Password)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if err.Error() == "invalid password" || err.Error() == "invalid recovery code" {
+			status = http.StatusUnauthorized
+		} else if err.Error() == "2fa not enabled" {
+			status = http.StatusBadRequest
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"secret":    secret,
+		"qrCode":    qrCode,
+		"tempToken": token,
+	})
+}
+
+type reset2FAFinalizePayload struct {
+	TempToken string `json:"tempToken"`
+	Code      string `json:"code"`
+}
+
+func (s *Server) reset2FAFinalizeHandler(c *gin.Context) {
+	var payload reset2FAFinalizePayload
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+		return
+	}
+
+	recoveryCodes, err := s.authService.FinalizeReset2FA(payload.TempToken, payload.Code)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if err.Error() == "invalid 2fa code" || err.Error() == "invalid token type" {
+			status = http.StatusUnauthorized
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":       "2fa reset complete",
+		"recoveryCodes": recoveryCodes,
+	})
+}
+
 type verify2FAPayload struct {
 	TempToken string `json:"tempToken"`
 	Code      string `json:"code"`
@@ -473,8 +533,21 @@ func (s *Server) forgotPasswordHandler(c *gin.Context) {
 		return
 	}
 
+	// Determine origin for the link
+	origin := c.Request.Header.Get("Origin")
+	if origin == "" {
+		// Fallback to configured client origin (taking the first one if multiple)
+		if s.cfg.ClientOrigin != "" {
+			parts := strings.Split(s.cfg.ClientOrigin, ",")
+			if len(parts) > 0 {
+				origin = strings.TrimSpace(parts[0])
+			}
+		}
+	}
+	origin = strings.TrimSuffix(origin, "/")
+
 	// Send Email
-	if err := s.SendPasswordResetEmail(account.Email, token); err != nil {
+	if err := s.SendPasswordResetEmail(account.Email, token, origin); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to send email: " + err.Error()})
 		return
 	}

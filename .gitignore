@@ -145,6 +145,10 @@ dist
 
 backend/tmp
 backend/backend
+backend/main
+backend/server.key
+backend/server.crt
+backend/ca.crt
 secrets/
 report.md
 updockly-agent/docker-compose.yml

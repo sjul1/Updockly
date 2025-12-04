@@ -130,6 +130,23 @@ func (s *AuthService) AccountExists() (bool, error) {
 	return count > 0, nil
 }
 
+func hashCodes(codes []string) []string {
+	hashed := make([]string, len(codes))
+	for i, c := range codes {
+		hashed[i] = hashSecret(c)
+	}
+	return hashed
+}
+
+func verifyRecoveryCode(code string, hashedCodes []string) (int, bool) {
+	for i, h := range hashedCodes {
+		if checkPassword(h, code) {
+			return i, true
+		}
+	}
+	return -1, false
+}
+
 func (s *AuthService) CreateAdmin(username, email, password, name, totpSecret string) ([]string, error) {
 	cipher, err := s.vault.Encrypt(totpSecret)
 	if err != nil {
@@ -150,7 +167,7 @@ func (s *AuthService) CreateAdmin(username, email, password, name, totpSecret st
 	for i := 0; i < 10; i++ {
 		codes[i] = randomString(10)
 	}
-	account.RecoveryCodes = codes
+	account.RecoveryCodes = hashCodes(codes)
 
 	if err := s.db.Create(&account).Error; err != nil {
 		return nil, err
@@ -222,7 +239,7 @@ func (s *AuthService) Enable2FA(username, code string) ([]string, error) {
 	for i := 0; i < 10; i++ {
 		codes[i] = randomString(10)
 	}
-	account.RecoveryCodes = codes
+	account.RecoveryCodes = hashCodes(codes)
 
 	if err := s.db.Save(&account).Error; err != nil {
 		return nil, err
@@ -245,16 +262,131 @@ func (s *AuthService) Disable2FA(username, code, password string) error {
 	}
 
 	secret, err := s.vault.Decrypt(account.TwoFactorSecret)
-	if err != nil {
-		return err
+
+	valid := false
+	if err == nil {
+		valid = totp.Validate(code, secret)
 	}
 
-	if !totp.Validate(code, secret) {
+	if !valid {
+		// Check recovery codes
+		_, found := verifyRecoveryCode(code, account.RecoveryCodes)
+		if found {
+			valid = true
+		}
+	}
+
+	if !valid {
+		if err != nil {
+			return err
+		}
 		return errors.New("invalid 2fa code")
 	}
 
 	account.TwoFactorEnabled = false
 	return s.db.Save(&account).Error
+}
+
+func (s *AuthService) InitiateReset2FA(username, recoveryCode, password string) (string, string, string, error) {
+	var account Account
+	if err := s.db.Where("username = ?", username).First(&account).Error; err != nil {
+		return "", "", "", err
+	}
+
+	if !account.TwoFactorEnabled {
+		return "", "", "", errors.New("2fa not enabled")
+	}
+
+	if !checkPassword(account.PasswordHash, password) {
+		return "", "", "", errors.New("invalid password")
+	}
+
+	// Verify recovery code
+	_, valid := verifyRecoveryCode(recoveryCode, account.RecoveryCodes)
+
+	if !valid {
+		return "", "", "", errors.New("invalid recovery code")
+	}
+
+	// Generate new TOTP
+	key, err := totp.Generate(totp.GenerateOpts{
+		Issuer:      "Updockly",
+		AccountName: username,
+	})
+	if err != nil {
+		return "", "", "", err
+	}
+
+	secret := key.Secret()
+	cipher, err := s.vault.Encrypt(secret)
+	if err != nil {
+		return "", "", "", err
+	}
+
+	// Temporarily disable 2FA until verified in next step
+	account.TwoFactorSecret = cipher
+	account.TwoFactorEnabled = false
+	account.RecoveryCodes = []string{}
+
+	if err := s.db.Save(&account).Error; err != nil {
+		return "", "", "", err
+	}
+
+	var buf bytes.Buffer
+	img, err := key.Image(256, 256)
+	if err != nil {
+		return "", "", "", err
+	}
+	if err := png.Encode(&buf, img); err != nil {
+		return "", "", "", err
+	}
+	dataURI := "data:image/png;base64," + base64.StdEncoding.EncodeToString(buf.Bytes())
+
+	token, err := s.IssueToken(account, "reset-2fa-verify", 15*time.Minute)
+	if err != nil {
+		return "", "", "", err
+	}
+
+	return secret, dataURI, token, nil
+}
+
+func (s *AuthService) FinalizeReset2FA(tempToken, code string) ([]string, error) {
+	claims, err := s.VerifyToken(tempToken)
+	if err != nil {
+		return nil, err
+	}
+	if claims.Type != "reset-2fa-verify" {
+		return nil, errors.New("invalid token type")
+	}
+
+	var account Account
+	if err := s.db.Where("username = ?", claims.Subject).First(&account).Error; err != nil {
+		return nil, err
+	}
+
+	secret, err := s.vault.Decrypt(account.TwoFactorSecret)
+	if err != nil {
+		return nil, err
+	}
+
+	if !totp.Validate(code, secret) {
+		return nil, errors.New("invalid 2fa code")
+	}
+
+	// Generate new recovery codes
+	newCodes := make([]string, 10)
+	for i := 0; i < 10; i++ {
+		newCodes[i] = randomString(10)
+	}
+
+	account.RecoveryCodes = hashCodes(newCodes)
+	account.TwoFactorEnabled = true
+
+	if err := s.db.Save(&account).Error; err != nil {
+		return nil, err
+	}
+
+	return newCodes, nil
 }
 
 func (s *AuthService) Validate2FA(username, code string) (bool, error) {
@@ -264,28 +396,33 @@ func (s *AuthService) Validate2FA(username, code string) (bool, error) {
 	}
 
 	secret, err := s.vault.Decrypt(account.TwoFactorSecret)
-	if err != nil {
-		return false, err
+	// If decryption fails, we treat the TOTP as invalid but continue to check recovery codes.
+	// Only return error if the code is NOT a valid recovery code either.
+
+	var valid bool
+	if err == nil {
+		valid = totp.Validate(code, secret)
 	}
 
-	valid := totp.Validate(code, secret)
 	if !valid {
 		// Check recovery codes
-		found := -1
-		for i, rc := range account.RecoveryCodes {
-			if rc == code {
-				found = i
-				break
-			}
-		}
-		if found != -1 {
+		idx, found := verifyRecoveryCode(code, account.RecoveryCodes)
+		if found {
 			// Remove used code
-			account.RecoveryCodes = append(account.RecoveryCodes[:found], account.RecoveryCodes[found+1:]...)
+			account.RecoveryCodes = append(account.RecoveryCodes[:idx], account.RecoveryCodes[idx+1:]...)
 			if err := s.db.Save(&account).Error; err != nil {
 				return false, err
 			}
 			return true, nil
 		}
+	}
+
+	// If we failed TOTP validation due to decryption error AND it wasn't a recovery code,
+	// then we should probably return the decryption error if it existed, or just false.
+	// But to maintain existing behavior for normal invalid codes, we return valid (false) and nil error if decryption worked but code was wrong.
+	// If decryption failed, and it wasn't a recovery code, we return the decryption error so logs show why.
+	if err != nil {
+		return false, err
 	}
 
 	return valid, nil
@@ -297,20 +434,14 @@ func (s *AuthService) ResetPasswordWithRecoveryCode(username, code, newPassword 
 		return errors.New("user not found")
 	}
 
-	found := -1
-	for i, rc := range account.RecoveryCodes {
-		if rc == code {
-			found = i
-			break
-		}
-	}
+	idx, found := verifyRecoveryCode(code, account.RecoveryCodes)
 
-	if found == -1 {
+	if !found {
 		return errors.New("invalid recovery code")
 	}
 
 	// Remove used code
-	account.RecoveryCodes = append(account.RecoveryCodes[:found], account.RecoveryCodes[found+1:]...)
+	account.RecoveryCodes = append(account.RecoveryCodes[:idx], account.RecoveryCodes[idx+1:]...)
 	account.PasswordHash = hashSecret(newPassword)
 
 	return s.db.Save(&account).Error
@@ -330,7 +461,7 @@ func (s *AuthService) RegenerateRecoveryCodes(username string) ([]string, error)
 	for i := 0; i < 10; i++ {
 		codes[i] = randomString(10)
 	}
-	account.RecoveryCodes = codes
+	account.RecoveryCodes = hashCodes(codes)
 
 	if err := s.db.Save(&account).Error; err != nil {
 		return nil, err

@@ -98,7 +98,12 @@ func New(cfg config.Config, db *gorm.DB) (*Server, error) {
 func (s *Server) configureMiddleware() {
 	origins := []string{"http://10.0.1.175:5173"}
 	if s.cfg.ClientOrigin != "" {
-		origins = append(origins, s.cfg.ClientOrigin)
+		for _, origin := range strings.Split(s.cfg.ClientOrigin, ",") {
+			trimmed := strings.TrimSpace(origin)
+			if trimmed != "" {
+				origins = append(origins, strings.TrimSuffix(trimmed, "/"))
+			}
+		}
 	}
 
 	s.router.Use(cors.New(cors.Config{
@@ -107,7 +112,6 @@ func (s *Server) configureMiddleware() {
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-Agent-Token"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
-		AllowOriginFunc:  func(origin string) bool { return true },
 	}))
 
 	// Security headers middleware
@@ -129,6 +133,8 @@ func (s *Server) registerRoutes() {
 		auth.POST("/forgot-password", s.forgotPasswordHandler)
 		auth.POST("/reset-password-token", s.resetPasswordWithTokenHandler)
 		auth.POST("/2fa/verify", s.verify2FAHandler)
+		auth.POST("/2fa/reset/init", s.reset2FAInitHandler)
+		auth.POST("/2fa/reset/finalize", s.reset2FAFinalizeHandler)
 		auth.GET("/me", s.authMiddleware(), s.profileHandler)
 		auth.PUT("/me", s.authMiddleware(), s.updateProfileHandler)
 		auth.GET("/sso/login", s.ssoLoginHandler)

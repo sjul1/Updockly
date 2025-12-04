@@ -316,8 +316,8 @@ func (s *Server) notifyAgentOffline(agent Agent) {
 	_ = s.sendWebhookMessage(ctx, content)
 }
 
-func (s *Server) SendPasswordResetEmail(to, token string) error {
-	link := fmt.Sprintf("%s/reset-password?token=%s", s.cfg.ClientOrigin, token)
+func (s *Server) SendPasswordResetEmail(to, token, origin string) error {
+	link := fmt.Sprintf("%s/reset-password?token=%s", origin, token)
 	subject := "Reset your Updockly password"
 	body := fmt.Sprintf("Hello,\n\nYou requested a password reset. Click the link below to reset your password:\n\n%s\n\nIf you did not request this, please ignore this email.\n\nThis link expires in 1 hour.", link)
 	return s.sendEmail([]string{to}, subject, body)
