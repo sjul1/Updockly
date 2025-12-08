@@ -154,7 +154,7 @@ func (s *Server) sendRecap(since, until time.Time) error {
 		for i := 0; i < limit; i++ {
 			row := rows[i]
 			when := row.CreatedAt.In(loc).Format("15:04")
-			
+
 			if row.Source == "schedule" && row.Status == "info" {
 				fmt.Fprintf(&b, "📅 %s @ %s\n   %s\n", "Schedule Run", when, row.Message)
 				continue
@@ -215,4 +215,3 @@ func (s *Server) sendRecap(since, until time.Time) error {
 
 	return nil
 }
-

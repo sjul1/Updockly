@@ -11,6 +11,7 @@ import {
   Sparkles,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
 } from "lucide-vue-next";
 import {
   api,
@@ -148,6 +149,8 @@ const deploymentCadence = computed(() => {
       }),
       successLocal: 0,
       successAgent: 0,
+      warningLocal: 0,
+      warningAgent: 0,
       errorLocal: 0,
       errorAgent: 0,
       total: 0,
@@ -168,10 +171,13 @@ const deploymentCadence = computed(() => {
     if (!target) return;
     const isAgent = entry.source === "agent";
     const isError = entry.status === "error";
+    const isWarning = entry.status === "warning";
 
     if (isAgent && isError) target.errorAgent += 1;
+    else if (isAgent && isWarning) target.warningAgent += 1;
     else if (isAgent) target.successAgent += 1;
     else if (isError) target.errorLocal += 1;
+    else if (isWarning) target.warningLocal += 1;
     else target.successLocal += 1;
     target.total += 1;
   });
@@ -185,6 +191,8 @@ const deploymentCadence = computed(() => {
       heights: {
         successLocal: scale(bucket.successLocal),
         successAgent: scale(bucket.successAgent),
+        warningLocal: scale(bucket.warningLocal),
+        warningAgent: scale(bucket.warningAgent),
         errorLocal: scale(bucket.errorLocal),
         errorAgent: scale(bucket.errorAgent),
       },
@@ -198,7 +206,12 @@ const activityFeed = computed(() => {
     label: entry.containerName || entry.containerId || "Container update",
     time: formatDateTime(entry.createdAt),
     detail: entry.message || entry.image || "Updated",
-    tone: entry.status === "error" ? "error" : "success",
+    tone:
+      entry.status === "error"
+        ? "error"
+        : entry.status === "warning"
+        ? "warning"
+        : "success",
   }));
 });
 
@@ -207,8 +220,11 @@ const recentStats = computed(() => {
   const success = recentHistory.value.filter(
     (h) => h.status === "success"
   ).length;
+  const warning = recentHistory.value.filter(
+    (h) => h.status === "warning"
+  ).length;
   const error = recentHistory.value.filter((h) => h.status === "error").length;
-  return { total, success, error };
+  return { total, success, warning, error };
 });
 
 const recentHistory = ref<UpdateHistory[]>([]);
@@ -439,14 +455,16 @@ onBeforeUnmount(() => {
     >
       <div class="absolute inset-0 bg-grid-primary/5 opacity-60"></div>
       <div
-        class="relative flex flex-col gap-6 p-8 md:flex-row md:items-start md:justify-between"
+        class="relative flex flex-col p-8 md:flex-row md:items-start md:justify-between"
       >
         <div class="space-y-3">
-          <div
-            class="inline-flex items-center gap-2 rounded-full bg-base-100/70 px-3 py-1 text-xs font-semibold shadow-sm"
-          >
-            <Activity class="h-4 w-4 text-primary" />
-            Live overview
+          <div class="flex items-start justify-between gap-3">
+            <div
+              class="inline-flex items-center gap-2 rounded-full bg-base-100/70 px-3 py-1 text-xs font-semibold shadow-sm"
+            >
+              <Activity class="h-4 w-4 text-primary" />
+              Live overview
+            </div>
           </div>
           <div class="space-y-2">
             <h1 class="text-3xl md:text-4xl font-bold leading-tight">
@@ -473,40 +491,40 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div class="flex flex-col items-end gap-2 md:self-start">
-          <div class="flex items-center gap-2">
-            <button
-              class="btn btn-ghost btn-square"
-              @click="emit('refresh-dashboard')"
-              :disabled="props.loadingBootstrap"
-              aria-label="Refresh dashboard"
-              title="Refresh dashboard"
-            >
-              <RefreshCw
-                class="w-4 h-4"
-                :class="{ 'animate-spin': props.loadingBootstrap }"
-              />
-            </button>
-            <button
-              type="button"
-              class="badge gap-2 border border-primary/40 cursor-pointer"
-              :class="
-                autoRefreshEnabled
-                  ? 'badge-primary text-primary-content'
-                  : 'badge-ghost text-base-content'
-              "
-              @click="toggleAutoRefresh"
-              :aria-pressed="autoRefreshEnabled"
-              :title="
-                autoRefreshEnabled
-                  ? 'Click to pause auto-refresh'
-                  : 'Click to resume auto-refresh'
-              "
-            >
-              <Sparkles class="h-3.5 w-3.5" />
-              {{ autoRefreshEnabled ? "Live" : "Paused" }}
-            </button>
-          </div>
+        <div
+          class="flex items-center gap-2 absolute top-6 right-6 md:static md:self-start md:ml-auto"
+        >
+          <button
+            class="btn btn-ghost btn-square"
+            @click="emit('refresh-dashboard')"
+            :disabled="props.loadingBootstrap"
+            aria-label="Refresh dashboard"
+            title="Refresh dashboard"
+          >
+            <RefreshCw
+              class="w-4 h-4"
+              :class="{ 'animate-spin': props.loadingBootstrap }"
+            />
+          </button>
+          <button
+            type="button"
+            class="badge gap-2 border border-primary/40 cursor-pointer"
+            :class="
+              autoRefreshEnabled
+                ? 'badge-primary text-primary-content'
+                : 'badge-ghost text-base-content'
+            "
+            @click="toggleAutoRefresh"
+            :aria-pressed="autoRefreshEnabled"
+            :title="
+              autoRefreshEnabled
+                ? 'Click to pause auto-refresh'
+                : 'Click to resume auto-refresh'
+            "
+          >
+            <Sparkles class="h-3.5 w-3.5" />
+            {{ autoRefreshEnabled ? "Live" : "Paused" }}
+          </button>
         </div>
       </div>
     </div>
@@ -665,24 +683,39 @@ onBeforeUnmount(() => {
             <Activity class="h-5 w-5 text-info" />
           </div>
           <div class="space-y-2">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2 text-sm">
-                <CheckCircle2 class="h-4 w-4 text-success" />
-                <span>Success</span>
+            <div class="flex flex-col gap-2">
+              <div
+                class="flex items-center justify-between rounded-xl border border-base-200 p-2"
+                title="Successful updates"
+              >
+                <div class="flex items-center gap-2 text-sm">
+                  <CheckCircle2 class="h-4 w-4 text-success" />
+                  <span>Success</span>
+                </div>
+                <span class="font-bold text-lg">{{ recentStats.success }}</span>
               </div>
-              <span class="font-bold text-lg">{{ recentStats.success }}</span>
-            </div>
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2 text-sm">
-                <AlertCircle class="h-4 w-4 text-error" />
-                <span>Failed</span>
+              <div
+                class="flex items-center justify-between rounded-xl border border-base-200 p-2"
+                title="Warnings / rollbacks"
+              >
+                <div class="flex items-center gap-2 text-sm">
+                  <AlertTriangle class="h-4 w-4 text-warning" />
+                  <span>Warnings</span>
+                </div>
+                <span class="font-bold text-lg">{{ recentStats.warning }}</span>
               </div>
-              <span class="font-bold text-lg">{{ recentStats.error }}</span>
+              <div
+                class="flex items-center justify-between rounded-xl border border-base-200 p-2"
+                title="Failed updates"
+              >
+                <div class="flex items-center gap-2 text-sm">
+                  <AlertCircle class="h-4 w-4 text-error" />
+                  <span>Failed</span>
+                </div>
+                <span class="font-bold text-lg">{{ recentStats.error }}</span>
+              </div>
             </div>
           </div>
-          <p class="text-xs text-base-content/60">
-            Last {{ recentStats.total }} updates.
-          </p>
         </div>
       </div>
     </div>
@@ -731,6 +764,30 @@ onBeforeUnmount(() => {
                     class="absolute inset-0 flex items-center justify-center text-[0.65rem] font-semibold text-white opacity-0 group-hover:opacity-100 transition pointer-events-none"
                   >
                     {{ bucket.errorLocal }}
+                  </span>
+                </div>
+                <div
+                  v-if="bucket.heights.warningAgent > 4"
+                  class="relative w-full rounded-lg bg-warning/70 transition"
+                  :style="{ height: `${bucket.heights.warningAgent}%` }"
+                  :title="`Agent warnings: ${bucket.warningAgent}`"
+                >
+                  <span
+                    class="absolute inset-0 flex items-center justify-center text-[0.65rem] font-semibold text-white opacity-0 group-hover:opacity-100 transition pointer-events-none"
+                  >
+                    {{ bucket.warningAgent }}
+                  </span>
+                </div>
+                <div
+                  v-if="bucket.heights.warningLocal > 4"
+                  class="relative w-full rounded-lg bg-warning/60 transition"
+                  :style="{ height: `${bucket.heights.warningLocal}%` }"
+                  :title="`Local warnings: ${bucket.warningLocal}`"
+                >
+                  <span
+                    class="absolute inset-0 flex items-center justify-center text-[0.65rem] font-semibold text-white opacity-0 group-hover:opacity-100 transition pointer-events-none"
+                  >
+                    {{ bucket.warningLocal }}
                   </span>
                 </div>
                 <div
@@ -784,6 +841,14 @@ onBeforeUnmount(() => {
               Agent success</span
             >
             <span class="flex items-center gap-1"
+              ><span class="inline-block h-3 w-3 rounded bg-warning/60"></span>
+              Local warnings</span
+            >
+            <span class="flex items-center gap-1"
+              ><span class="inline-block h-3 w-3 rounded bg-warning/70"></span>
+              Agent warnings</span
+            >
+            <span class="flex items-center gap-1"
               ><span class="inline-block h-3 w-3 rounded bg-error/60"></span>
               Local errors</span
             >
@@ -804,28 +869,38 @@ onBeforeUnmount(() => {
         <div class="card-body space-y-5">
           <div class="flex items-center justify-between">
             <h3 class="text-lg font-semibold">Recent activity</h3>
-            <span class="text-xs text-base-content/60"
-              >Last {{ recentStats.total }} updates</span
-            >
+            <span class="text-xs text-base-content/60"></span>
           </div>
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-3 gap-3">
             <div
               class="flex items-center justify-between rounded-xl border border-base-200 p-3"
+              title="Successful updates"
             >
               <div class="flex items-center gap-2">
-                <CheckCircle2 class="h-4 w-4 text-success" />
-                <span class="text-sm font-semibold">Success</span>
+                <CheckCircle2 class="h-5 w-5 text-success" />
+                <span class="sr-only">Success</span>
               </div>
-              <span class="text-lg font-bold">{{ recentStats.success }}</span>
+              <span class="text-xl font-bold">{{ recentStats.success }}</span>
             </div>
             <div
               class="flex items-center justify-between rounded-xl border border-base-200 p-3"
+              title="Warnings / rollbacks"
             >
               <div class="flex items-center gap-2">
-                <AlertCircle class="h-4 w-4 text-error" />
-                <span class="text-sm font-semibold">Failed</span>
+                <AlertTriangle class="h-5 w-5 text-warning" />
+                <span class="sr-only">Warnings</span>
               </div>
-              <span class="text-lg font-bold">{{ recentStats.error }}</span>
+              <span class="text-xl font-bold">{{ recentStats.warning }}</span>
+            </div>
+            <div
+              class="flex items-center justify-between rounded-xl border border-base-200 p-3"
+              title="Failed updates"
+            >
+              <div class="flex items-center gap-2">
+                <AlertCircle class="h-5 w-5 text-error" />
+                <span class="sr-only">Failed</span>
+              </div>
+              <span class="text-xl font-bold">{{ recentStats.error }}</span>
             </div>
           </div>
           <div class="space-y-3">
@@ -842,6 +917,8 @@ onBeforeUnmount(() => {
                   class="mt-1 inline-flex h-2.5 w-2.5 rounded-full"
                   :class="{
                     'bg-success': item.tone === 'success',
+                    'bg-warning': item.tone === 'warning',
+                    'bg-error': item.tone === 'error',
                     'bg-info': item.tone === 'info',
                     'bg-base-content/30': item.tone === 'neutral',
                   }"

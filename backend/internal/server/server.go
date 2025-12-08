@@ -2,7 +2,11 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,6 +22,7 @@ import (
 	"gorm.io/gorm"
 
 	"updockly/backend/internal/config"
+	"updockly/backend/internal/logging"
 )
 
 // Server wires HTTP handlers together.
@@ -26,6 +31,7 @@ type Server struct {
 	db        *gorm.DB
 	vault     *Vault
 	router    *gin.Engine
+	log       *slog.Logger
 	jwtSecret []byte
 	timezone  *time.Location
 	startedAt time.Time
@@ -40,10 +46,26 @@ type Server struct {
 	authService      *AuthService
 	containerService *ContainerService
 	certManager      *CertManager
+
+	loginAttempts map[string]loginAttempt
+	loginMu       sync.Mutex
 }
+
+type loginAttempt struct {
+	count        int
+	lastAttempt  time.Time
+	blockedUntil time.Time
+}
+
+const (
+	accessTokenTTL  = 15 * time.Minute
+	refreshTokenTTL = 30 * 24 * time.Hour
+	stateTTL        = 10 * time.Minute
+)
 
 func New(cfg config.Config, db *gorm.DB) (*Server, error) {
 	gin.SetMode(gin.ReleaseMode)
+	logger := logging.New(cfg.LogLevel)
 
 	loc := time.Local
 	if cfg.Timezone != "" {
@@ -54,56 +76,79 @@ func New(cfg config.Config, db *gorm.DB) (*Server, error) {
 	// Ensure the process uses the configured timezone for time.Now() and formatting.
 	time.Local = loc
 
-	vault := NewVault(cfg.SecretKey)
+	vault := NewVault(cfg.VaultKey, cfg.SecretKey, cfg.VaultKeyPrevious)
 
-	// Use shared volume path for certs if available, otherwise default to current directory
+	// Use shared volume path for certs if available; do not generate elsewhere if absent
 	certDir := "/etc/updockly/certs"
+	ensureCerts := true
 	if _, err := os.Stat(certDir); os.IsNotExist(err) {
-		certDir = "."
+		ensureCerts = false
 	}
 	certManager := NewCertManager(
 		filepath.Join(certDir, "server.crt"),
 		filepath.Join(certDir, "server.key"),
 		filepath.Join(certDir, "ca.crt"),
 	)
-	if err := certManager.EnsureCertificates(); err != nil {
-		// Log error but don't fail startup, as we might be running without TLS intent initially
-		// or just serving HTTP behind proxy that handles its own TLS.
-		// But for "generate on the fly" feature, we try our best.
-		fmt.Printf("Warning: failed to generate self-signed certs: %v\n", err)
+	if ensureCerts {
+		if err := certManager.EnsureCertificates(); err != nil {
+			// Fail fast to avoid serving with broken TLS
+			return nil, fmt.Errorf("failed to generate or load TLS certs: %w", err)
+		}
+	} else {
+		logger.Warn("certificate directory missing; TLS assets not generated", "certDir", certDir)
 	}
 
+	router := gin.New()
+	router.Use(gin.Recovery())
+	router.Use(logging.Middleware(logger))
+
 	srv := &Server{
-		cfg:             cfg,
-		db:              db,
-		vault:           vault,
-		router:          gin.Default(),
-		jwtSecret:       []byte(cfg.SecretKey),
-		timezone:        loc,
-		startedAt:       time.Now(),
-		recapPrimed:     false,
-		offlineNotified: make(map[string]bool),
-		agentService:     NewAgentService(db),
-		authService:      NewAuthService(db, vault, cfg.SecretKey),
+		cfg:              cfg,
+		db:               db,
+		vault:            vault,
+		router:           router,
+		log:              logger,
+		jwtSecret:        []byte(cfg.JWTSecret),
+		timezone:         loc,
+		startedAt:        time.Now(),
+		recapPrimed:      false,
+		offlineNotified:  make(map[string]bool),
+		agentService:     NewAgentService(db, cfg.AgentRequireIPBinding),
+		authService:      NewAuthService(db, vault, cfg.JWTSecret, cfg.SecretKey, cfg.JWTSecretPrevious),
 		containerService: NewContainerService(db),
 		certManager:      certManager,
+		loginAttempts:    make(map[string]loginAttempt),
 	}
 
 	srv.configureMiddleware()
 	srv.registerRoutes()
 
+	// If we have an existing database, try to re-encrypt secrets with the primary vault key.
+	if db != nil {
+		srv.reencryptVaultSecrets()
+	}
+
 	return srv, nil
 }
 
 func (s *Server) configureMiddleware() {
-	origins := []string{"http://10.0.1.175:5173"}
+	origins := make([]string, 0)
 	if s.cfg.ClientOrigin != "" {
 		for _, origin := range strings.Split(s.cfg.ClientOrigin, ",") {
 			trimmed := strings.TrimSpace(origin)
-			if trimmed != "" {
-				origins = append(origins, strings.TrimSuffix(trimmed, "/"))
+			if trimmed == "" {
+				continue
 			}
+			if !strings.HasPrefix(trimmed, "http://") && !strings.HasPrefix(trimmed, "https://") {
+				s.log.Warn("rejecting invalid CLIENT_ORIGIN entry; scheme required", "origin", trimmed)
+				continue
+			}
+			origins = append(origins, strings.TrimSuffix(trimmed, "/"))
 		}
+	}
+	// If no valid origins, default to none to avoid over-broad CORS.
+	if len(origins) == 0 {
+		s.log.Warn("no valid CLIENT_ORIGIN provided; CORS will reject cross-origin requests")
 	}
 
 	s.router.Use(cors.New(cors.Config{
@@ -129,6 +174,8 @@ func (s *Server) registerRoutes() {
 	auth := s.router.Group("/api/auth")
 	{
 		auth.POST("/login", s.loginHandler)
+		auth.POST("/refresh", s.refreshHandler)
+		auth.POST("/logout", s.authMiddleware(), s.logoutHandler)
 		auth.POST("/reset-password", s.resetPasswordHandler)
 		auth.POST("/forgot-password", s.forgotPasswordHandler)
 		auth.POST("/reset-password-token", s.resetPasswordWithTokenHandler)
@@ -236,19 +283,179 @@ func (s *Server) clearAgentOfflineNotified(id string) {
 	delete(s.offlineNotified, id)
 }
 
+func (s *Server) issueSession(c *gin.Context, acc *Account) error {
+	access, err := s.authService.IssueToken(*acc, "", accessTokenTTL)
+	if err != nil {
+		return err
+	}
+	refresh, err := s.authService.IssueRefreshToken(acc, refreshTokenTTL)
+	if err != nil {
+		return err
+	}
+	s.setAuthCookies(c, access, refresh)
+	return nil
+}
+
+func (s *Server) setAuthCookies(c *gin.Context, access, refresh string) {
+	secure := false
+	if origin := strings.Split(strings.TrimSpace(s.cfg.ClientOrigin), ",")[0]; strings.HasPrefix(strings.ToLower(origin), "https://") {
+		secure = true
+	}
+	c.SetSameSite(http.SameSiteLaxMode)
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "access_token",
+		Value:    access,
+		Path:     "/",
+		MaxAge:   int(accessTokenTTL.Seconds()),
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+	})
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    refresh,
+		Path:     "/",
+		MaxAge:   int(refreshTokenTTL.Seconds()),
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func (s *Server) clearAuthCookies(c *gin.Context) {
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "access_token",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func (s *Server) signState(value string) string {
+	sum := sha256.Sum256(append([]byte(value), s.jwtSecret...))
+	return hex.EncodeToString(sum[:])
+}
+
+func (s *Server) verifyState(stateParam, stateCookie string) bool {
+	parts := strings.Split(stateCookie, ".")
+	if len(parts) != 2 {
+		return false
+	}
+	raw, sig := parts[0], parts[1]
+	if subtle.ConstantTimeCompare([]byte(stateParam), []byte(stateCookie)) != 1 {
+		return false
+	}
+	expected := s.signState(raw)
+	return subtle.ConstantTimeCompare([]byte(sig), []byte(expected)) == 1
+}
+
+func (s *Server) loginKey(username, ip string) string {
+	user := strings.ToLower(strings.TrimSpace(username))
+	return fmt.Sprintf("%s|%s", user, ip)
+}
+
+func (s *Server) isLoginBlocked(key string) (time.Duration, bool) {
+	s.loginMu.Lock()
+	defer s.loginMu.Unlock()
+	state, ok := s.loginAttempts[key]
+	if !ok {
+		return 0, false
+	}
+	now := time.Now()
+	if state.blockedUntil.After(now) {
+		return time.Until(state.blockedUntil), true
+	}
+	// Reset stale counters after inactivity
+	if now.Sub(state.lastAttempt) > 30*time.Minute {
+		delete(s.loginAttempts, key)
+		return 0, false
+	}
+	return 0, false
+}
+
+func (s *Server) recordLoginFailure(key string) {
+	s.loginMu.Lock()
+	defer s.loginMu.Unlock()
+	state := s.loginAttempts[key]
+	now := time.Now()
+	state.lastAttempt = now
+	state.count++
+	if state.count >= 5 {
+		state.blockedUntil = now.Add(15 * time.Minute)
+		s.log.Warn("login throttle block",
+			"key", key,
+			"blocked_until", state.blockedUntil.Format(time.RFC3339),
+			"failures", state.count,
+		)
+	}
+	s.loginAttempts[key] = state
+}
+
+func (s *Server) clearLoginFailures(key string) {
+	s.loginMu.Lock()
+	defer s.loginMu.Unlock()
+	delete(s.loginAttempts, key)
+}
+
+// reencryptVaultSecrets migrates stored secrets to the primary vault key to complete rotation.
+func (s *Server) reencryptVaultSecrets() {
+	if s.db == nil || s.vault == nil {
+		return
+	}
+	var accounts []Account
+	if err := s.db.Select("id", "two_factor_secret").Find(&accounts).Error; err != nil {
+		s.log.Warn("unable to load accounts for vault re-encryption", "error", err)
+		return
+	}
+	for _, acc := range accounts {
+		if acc.TwoFactorSecret == "" {
+			continue
+		}
+		secret, usedPrimary, err := s.vault.DecryptWithInfo(acc.TwoFactorSecret)
+		if err != nil {
+			fmt.Printf("Warning: failed to decrypt 2FA secret for account %s: %v\n", acc.ID, err)
+			continue
+		}
+		if usedPrimary {
+			continue
+		}
+		enc, err := s.vault.Encrypt(secret)
+		if err != nil {
+			fmt.Printf("Warning: failed to re-encrypt 2FA secret for account %s: %v\n", acc.ID, err)
+			continue
+		}
+		if err := s.db.Model(&Account{}).Where("id = ?", acc.ID).Update("two_factor_secret", enc).Error; err != nil {
+			fmt.Printf("Warning: failed to update rotated 2FA secret for account %s: %v\n", acc.ID, err)
+		}
+	}
+}
+
 func (s *Server) applyRuntimeSettings(settings config.RuntimeSettings) {
 	oldDBURL := s.cfg.DatabaseURL
 	s.cfg.DatabaseURL = settings.DatabaseURL
 	s.cfg.ClientOrigin = settings.ClientOrigin
+	// SECRET_KEY is retained for legacy; JWT/Vault keys are sourced from environment.
 	s.cfg.SecretKey = settings.SecretKey
+	s.cfg.HideSupportButton = settings.HideSupport
 	s.cfg.Timezone = settings.Timezone
 	s.cfg.AutoPruneImages = settings.AutoPrune
 	s.cfg.Notifications = settings.Notifications
 	s.cfg.SSO = settings.SSO
 
 	if s.cfg.SecretKey != "" {
-		s.vault = NewVault(s.cfg.SecretKey)
-		s.jwtSecret = []byte(s.cfg.SecretKey)
+		// Preserve existing vault/jwt keys; do not overwrite them with legacy secret.
+		s.vault = NewVault(s.cfg.VaultKey, s.cfg.SecretKey, s.cfg.VaultKeyPrevious)
+		s.jwtSecret = []byte(s.cfg.JWTSecret)
 	}
 
 	if settings.Timezone != "" {
@@ -282,9 +489,10 @@ func (s *Server) applyRuntimeSettings(settings config.RuntimeSettings) {
 					&RunningSnapshot{},
 				); err == nil {
 					s.db = db
-					s.agentService = NewAgentService(db)
-					s.authService = NewAuthService(db, s.vault, s.cfg.SecretKey)
+					s.agentService = NewAgentService(db, s.cfg.AgentRequireIPBinding)
+					s.authService = NewAuthService(db, s.vault, s.cfg.JWTSecret, s.cfg.SecretKey, s.cfg.JWTSecretPrevious)
 					s.containerService = NewContainerService(db)
+					s.reencryptVaultSecrets()
 				}
 			}
 		}
@@ -296,4 +504,6 @@ func (s *Server) applyRuntimeSettings(settings config.RuntimeSettings) {
 		s.cfg.DBPort = port
 		s.cfg.DBName = db
 	}
+
+	s.reencryptVaultSecrets()
 }

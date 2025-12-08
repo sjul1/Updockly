@@ -21,7 +21,7 @@ import (
 )
 
 type ContainerService struct {
-	db                 *gorm.DB
+	db                  *gorm.DB
 	dockerClientFactory func() (client.APIClient, error)
 }
 
@@ -239,7 +239,7 @@ func (s *ContainerService) ToggleAutoUpdate(ctx context.Context, id string, enab
 		if cfg.ID == "" && imageRef != "" {
 			_ = silentDB.Where("image = ?", imageRef).First(&cfg).Error
 		}
-		
+
 		if cfg.ID == "" {
 			// Create new
 			cfg = ContainerSettings{
@@ -328,6 +328,33 @@ func (s *ContainerService) CountAutoUpdate() (int64, error) {
 // UpdateProgressCallback is used to stream status updates
 type UpdateProgressCallback func(map[string]interface{})
 
+// UpdateError describes an update failure; RolledBack indicates the old container was restored.
+type UpdateError struct {
+	Err             error
+	RolledBack      bool
+	RollbackMessage string
+}
+
+func (e *UpdateError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if e.RolledBack && e.RollbackMessage != "" {
+		return fmt.Sprintf("%s (rolled back: %s)", e.Err, e.RollbackMessage)
+	}
+	if e.Err != nil {
+		return e.Err.Error()
+	}
+	return "update failed"
+}
+
+func (e *UpdateError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
 func (s *ContainerService) UpdateContainer(ctx context.Context, id string, progress UpdateProgressCallback) (string, string, string, string, error) {
 	cli, err := s.getDockerClient()
 	if err != nil {
@@ -340,9 +367,16 @@ func (s *ContainerService) UpdateContainer(ctx context.Context, id string, progr
 		return "", "", "", "", fmt.Errorf("failed to inspect container: %w", err)
 	}
 
-	progress(map[string]interface{}{"status": "Pulling image " + info.Config.Image})
+	sendProgress := func(status string) {
+		if progress != nil {
+			progress(map[string]interface{}{"status": status})
+		}
+	}
 
-	out, err := cli.ImagePull(ctx, info.Config.Image, image.PullOptions{})
+	sendProgress("Pulling image " + info.Config.Image)
+
+	targetRef := info.Config.Image
+	out, err := cli.ImagePull(ctx, targetRef, image.PullOptions{})
 	if err != nil {
 		return "", "", "", "", fmt.Errorf("image pull failed: %w", err)
 	}
@@ -353,41 +387,81 @@ func (s *ContainerService) UpdateContainer(ctx context.Context, id string, progr
 		line := scanner.Text()
 		var parsed map[string]interface{}
 		if err := json.Unmarshal([]byte(line), &parsed); err == nil {
-			progress(parsed)
-		} else {
+			if progress != nil {
+				progress(parsed)
+			}
+		} else if progress != nil {
 			progress(map[string]interface{}{"status": line})
 		}
 	}
 
-	progress(map[string]interface{}{"status": "Stopping container"})
+	digest := resolveImageDigest(ctx, cli, targetRef)
+
+	sendProgress("Stopping container")
 	if err := cli.ContainerStop(ctx, id, container.StopOptions{}); err != nil {
 		return "", "", "", "", fmt.Errorf("failed to stop container: %w", err)
 	}
 
-	progress(map[string]interface{}{"status": "Removing container"})
-	if err := cli.ContainerRemove(ctx, id, container.RemoveOptions{RemoveVolumes: true, Force: true}); err != nil {
-		return "", "", "", "", fmt.Errorf("failed to remove container: %w", err)
+	name := strings.TrimPrefix(info.Name, "/")
+	backupName := fmt.Sprintf("%s-updockly-backup-%d", name, time.Now().Unix())
+	sendProgress("Backing up container before recreate")
+	if err := cli.ContainerRename(ctx, id, backupName); err != nil {
+		_ = cli.ContainerStart(ctx, id, container.StartOptions{})
+		return "", "", "", "", fmt.Errorf("failed to backup container: %w", err)
+	}
+	backupID := id
+
+	restoreOriginal := func(reason error) (string, string, string, string, error) {
+		sendProgress("Rolling back to previous container")
+		if err := cli.ContainerRename(ctx, backupID, name); err != nil {
+			// Best effort start even if rename fails to avoid downtime
+			_ = cli.ContainerStart(ctx, backupID, container.StartOptions{})
+			return backupID, name, info.Config.Image, "", &UpdateError{
+				Err: fmt.Errorf("failed to recreate container (%v) and could not restore original name: %w", reason, err),
+			}
+		}
+		if err := cli.ContainerStart(ctx, backupID, container.StartOptions{}); err != nil {
+			return backupID, name, info.Config.Image, "", &UpdateError{
+				Err: fmt.Errorf("failed to recreate container (%v) and restart the original one: %w", reason, err),
+			}
+		}
+		return backupID, name, info.Config.Image, "", &UpdateError{
+			Err:             reason,
+			RolledBack:      true,
+			RollbackMessage: "restored previous container",
+		}
 	}
 
-	progress(map[string]interface{}{"status": "Recreating container"})
+	sendProgress("Recreating container")
 	networkingConfig := &network.NetworkingConfig{EndpointsConfig: make(map[string]*network.EndpointSettings)}
 	for netName, endpoint := range info.NetworkSettings.Networks {
 		networkingConfig.EndpointsConfig[netName] = endpoint
 	}
 
-	name := strings.TrimPrefix(info.Name, "/")
-	resp, err := cli.ContainerCreate(ctx, info.Config, info.HostConfig, networkingConfig, nil, name)
-	if err != nil {
-		return "", "", "", "", fmt.Errorf("failed to recreate container: %w", err)
+	configCopy := *info.Config
+	hostConfigCopy := *info.HostConfig
+	if hostConfigCopy.NetworkMode.IsHost() {
+		// Docker does not allow setting hostname with host network mode; clear to avoid recreate failure.
+		configCopy.Hostname = ""
+		configCopy.Domainname = ""
 	}
 
-	progress(map[string]interface{}{"status": "Starting new container"})
-	if err := cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
-		return "", "", "", "", fmt.Errorf("failed to start container: %w", err)
+	resp, err := cli.ContainerCreate(ctx, &configCopy, &hostConfigCopy, networkingConfig, nil, name)
+	if err != nil {
+		return restoreOriginal(fmt.Errorf("failed to recreate container: %w", err))
 	}
+
+	sendProgress("Starting new container")
+	if err := cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+		_ = cli.ContainerRemove(ctx, resp.ID, container.RemoveOptions{RemoveVolumes: true, Force: true})
+		return restoreOriginal(fmt.Errorf("failed to start container: %w", err))
+	}
+
+	sendProgress("Cleaning up old container")
+	_ = cli.ContainerRemove(ctx, backupID, container.RemoveOptions{RemoveVolumes: true, Force: true})
 
 	// Sync DB
-	newDigest := resolveImageDigest(ctx, cli, info.Config.Image)
+	newDigest := digest
 	if s.db != nil {
 		silentDB := s.db.Session(&gorm.Session{Logger: logger.Discard})
 		_ = silentDB.Model(&ContainerSettings{}).Where("id = ?", id).Updates(map[string]interface{}{
@@ -397,7 +471,7 @@ func (s *ContainerService) UpdateContainer(ctx context.Context, id string, progr
 			"image":            info.Config.Image,
 		}).Error
 	}
-	
+
 	return resp.ID, name, info.Config.Image, newDigest, nil
 }
 

@@ -22,7 +22,6 @@ import {
 import {
   ApiError,
   api,
-  setAuthToken,
   setOfflineMode,
   type ApiUser,
   type DashboardStats,
@@ -41,21 +40,28 @@ import AgentsPanel from "./components/Agents.vue";
 import BackendOffline from "./components/BackendOffline.vue";
 import Setup from "./components/Setup.vue";
 import { useToast } from "vue-toastification";
-import type {
-  SettingsFormState,
-} from "./types/formTypes";
+import type { SettingsFormState } from "./types/formTypes";
 
-const storedTheme =
-  (localStorage.getItem("replicore_theme") as "light" | "dark") || "light";
-const theme = ref<"light" | "dark">(storedTheme);
+type Theme = "light" | "dark";
+const storedThemeRaw = localStorage.getItem("updockly_theme");
+const storedTheme: Theme = storedThemeRaw === "dark" ? "dark" : "light";
+const theme = ref<Theme>(storedTheme);
 const applyTheme = () => {
   document.documentElement.setAttribute("data-theme", theme.value);
 };
-const toggleTheme = () => {
-  theme.value = theme.value === "light" ? "dark" : "light";
-  localStorage.setItem("replicore_theme", theme.value);
+const setTheme = (value: Theme) => {
+  const next = value === "dark" ? "dark" : "light";
+  theme.value = next;
+  localStorage.setItem("updockly_theme", theme.value);
   applyTheme();
 };
+const toggleTheme = () => {
+  const next: Theme = theme.value === "light" ? "dark" : "light";
+  setTheme(next);
+};
+provide("appTheme", theme);
+provide("setAppTheme", setTheme);
+watch(theme, applyTheme, { immediate: true });
 
 const browserTimezone =
   Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -70,18 +76,12 @@ const HEALTH_CHECK_INTERVAL_MS = 30000;
 const dataPollTimer = ref<number | null>(null);
 const DATA_POLL_INTERVAL_MS = 30000;
 const currentUser = ref<ApiUser | null>(null);
-const sessionToken = ref<string | null>(
-  localStorage.getItem("replicore_token")
-);
 const tempToken = ref("");
 const twoFactorRequired = ref(false);
 const needsSetup = ref(false);
 const ssoEnabled = ref(false);
-if (sessionToken.value) {
-  setAuthToken(sessionToken.value);
-}
 
-const PANEL_STORAGE_KEY = "replicore_active_panel";
+const PANEL_STORAGE_KEY = "updockly_active_panel";
 const panelOptions: SidebarPanel[] = [
   "login",
   "containers",
@@ -108,7 +108,6 @@ watch(activePanel, (panel) => {
 const createDefaultSettings = (): SettingsFormState => ({
   databaseUrl: "",
   clientOrigin: "",
-  secretKey: "",
   timezone: browserTimezone,
   autoPruneImages: false,
   hideSupportButton: false,
@@ -151,7 +150,9 @@ const createDefaultSettings = (): SettingsFormState => ({
 });
 const settingsForm = reactive<SettingsFormState>(createDefaultSettings());
 
-type FormatTimeFn = (value: string | number | Date | null | undefined) => string;
+type FormatTimeFn = (
+  value: string | number | Date | null | undefined
+) => string;
 const formatTime: FormatTimeFn = (value) => {
   if (!value) return "--:--:--";
   const date = value instanceof Date ? value : new Date(value);
@@ -224,9 +225,9 @@ const navItems = computed<NavItem[]>(() => {
 });
 
 watch(
-  () => ({ authed: isAuthenticated.value, token: sessionToken.value }),
-  ({ authed, token }) => {
-    if (!authed && !token && activePanel.value !== "login") {
+  () => isAuthenticated.value,
+  (authed) => {
+    if (!authed && activePanel.value !== "login") {
       activePanel.value = "login";
     }
   }
@@ -241,22 +242,10 @@ const notify = (type: "success" | "error", message: string) => {
   }
 };
 
-const persistToken = (value: string | null) => {
-  sessionToken.value = value;
-  if (value) {
-    localStorage.setItem("replicore_token", value);
-    setAuthToken(value);
-  } else {
-    localStorage.removeItem("replicore_token");
-    setAuthToken(null);
-  }
-};
-
 watch(
   () => [
     settingsForm.databaseUrl,
     settingsForm.clientOrigin,
-    settingsForm.secretKey,
     settingsForm.timezone,
   ],
   () => {},
@@ -274,7 +263,8 @@ const handleApiError = (error: unknown, fallbackMessage: string) => {
     error instanceof TypeError
   ) {
     const message =
-      (error instanceof Error && error.message) || "Unable to reach the backend";
+      (error instanceof Error && error.message) ||
+      "Unable to reach the backend";
     backendErrorMessage.value = message;
     backendOffline.value = true;
     healthStatus.value = "Offline";
@@ -285,7 +275,9 @@ const handleApiError = (error: unknown, fallbackMessage: string) => {
   }
   console.error(error);
   const message =
-    (error instanceof Error && error.message) || fallbackMessage || "An error occurred";
+    (error instanceof Error && error.message) ||
+    fallbackMessage ||
+    "An error occurred";
   notify("error", message);
 };
 
@@ -370,7 +362,8 @@ const checkHealth = async (options?: HealthOptions) => {
       return true;
     } catch (error) {
       const message =
-        (error instanceof Error && error.message) || "Backend health check failed";
+        (error instanceof Error && error.message) ||
+        "Backend health check failed";
       console.error(error);
       healthStatus.value = "Offline";
       backendVersion.value = "";
@@ -412,13 +405,13 @@ const scheduleHealthPolling = () => {
 };
 
 const ensureSession = async () => {
-  if (!sessionToken.value || backendOffline.value) return;
+  if (backendOffline.value) return;
   try {
     currentUser.value = await api.getProfile();
     await loadAllData();
     await fetchSettings();
   } catch (error) {
-    handleApiError(error, "Failed to restore session");
+    // Ignore unauthorized here; handled by login flow
   }
 };
 
@@ -426,9 +419,7 @@ const loadAllData = async () => {
   if (!isAuthenticated.value) return;
   loading.bootstrap = true;
   try {
-    const [stats] = await Promise.all([
-      api.getDashboard(),
-    ]);
+    const [stats] = await Promise.all([api.getDashboard()]);
     dashboard.value = stats;
   } catch (error) {
     handleApiError(error, "Unable to load data");
@@ -438,7 +429,7 @@ const loadAllData = async () => {
 };
 
 const logout = () => {
-  persistToken(null);
+  api.logout().catch(() => {});
   currentUser.value = null;
   dashboard.value = null;
   hydrateSettings(createDefaultSettings());
@@ -455,8 +446,7 @@ const handleLogin = async (payload: { username: string; password: string }) => {
       twoFactorRequired.value = true;
       return;
     }
-    if (response.token && response.user) {
-      persistToken(response.token);
+    if (response.user) {
       currentUser.value = response.user;
       notify("success", `Welcome back ${response.user.name}`);
       await loadAllData();
@@ -473,8 +463,7 @@ const handle2FAVerify = async (code: string) => {
   loading.login = true;
   try {
     const response = await api.verify2FA(tempToken.value, code);
-    if (response.token && response.user) {
-      persistToken(response.token);
+    if (response.user) {
       currentUser.value = response.user;
       notify("success", `Welcome back ${response.user.name}`);
       await loadAllData();
@@ -488,10 +477,11 @@ const handle2FAVerify = async (code: string) => {
     } else {
       // Re-throw other errors so Login component handles failedAttempts count
       // But we can still notify generic error
-      const msg = error instanceof Error ? error.message : "Verification failed";
+      const msg =
+        error instanceof Error ? error.message : "Verification failed";
       notify("error", msg);
     }
-    throw error; 
+    throw error;
   } finally {
     loading.login = false;
   }
@@ -548,11 +538,12 @@ const loadSettings = fetchSettings;
 
 const fetchUserProfile = ensureSession;
 
-
 const saveSettings = async () => {
   if (
     settingsForm.notifications.recapTime &&
-    !/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(settingsForm.notifications.recapTime)
+    !/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(
+      settingsForm.notifications.recapTime
+    )
   ) {
     notify("error", "Recap time must be in HH:mm (24h) format");
     return;
@@ -591,7 +582,10 @@ const testEmailNotification = async () => {
     await api.testEmailNotification();
     notify("success", "Test email sent! Check your admin email inbox.");
   } catch (error) {
-    notify("error", error instanceof Error ? error.message : "Email test failed");
+    notify(
+      "error",
+      error instanceof Error ? error.message : "Email test failed"
+    );
   } finally {
     loading.notificationsTest = false;
   }
@@ -652,19 +646,20 @@ onMounted(async () => {
       logout();
     }
   });
-  
+
   // Check for SSO token in URL
   const url = new URL(window.location.href);
   const token = url.searchParams.get("token");
 
   // If we are on the reset-password route, force logout so the Login component can handle the reset token
-  if (url.pathname === "/reset-password" || url.pathname === "/reset-password/") {
-    persistToken(null);
+  if (
+    url.pathname === "/reset-password" ||
+    url.pathname === "/reset-password/"
+  ) {
     currentUser.value = null;
   } else if (token) {
-    persistToken(token);
+    // Token query param is now unused (cookies handle auth). Clean up the URL.
     window.history.replaceState({}, document.title, "/");
-    // ensureSession will be called below
   }
 
   try {
@@ -711,7 +706,10 @@ watch(backendOffline, (isOffline) => {
 </script>
 
 <template>
-  <div v-if="isInitializing" class="flex h-screen items-center justify-center bg-base-200">
+  <div
+    v-if="isInitializing"
+    class="flex h-screen items-center justify-center bg-base-200"
+  >
     <span class="loading loading-spinner loading-lg text-primary"></span>
   </div>
   <Setup
@@ -723,22 +721,28 @@ watch(backendOffline, (isOffline) => {
   />
   <div v-else class="flex min-h-screen bg-base-200 text-base-content">
     <!-- Mobile Header -->
-    <div class="lg:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between border-b border-base-300 bg-base-100/80 px-4 py-3 backdrop-blur-md">
-              <div class="flex items-center gap-3">
-                <button class="btn btn-square btn-ghost btn-sm" @click="isSidebarOpen = !isSidebarOpen">
-                  <Menu class="h-5 w-5" />
-                </button>
-                <div
-                  class="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-content shadow-lg shadow-primary/30"
-                >
-                  <Activity class="h-6 w-6" />
-                </div>
-                <span class="font-bold text-lg">Updockly</span>
-              </div>    </div>
+    <div
+      class="lg:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between border-b border-base-300 bg-base-100/80 px-4 py-3 backdrop-blur-md"
+    >
+      <div class="flex items-center gap-3">
+        <button
+          class="btn btn-square btn-ghost btn-sm"
+          @click="isSidebarOpen = !isSidebarOpen"
+        >
+          <Menu class="h-5 w-5" />
+        </button>
+        <div
+          class="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-content shadow-lg shadow-primary/30"
+        >
+          <Activity class="h-6 w-6" />
+        </div>
+        <span class="font-bold text-lg">Updockly</span>
+      </div>
+    </div>
 
     <!-- Backdrop -->
-    <div 
-      v-if="isSidebarOpen" 
+    <div
+      v-if="isSidebarOpen"
       class="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden"
       @click="isSidebarOpen = false"
     ></div>
@@ -839,20 +843,19 @@ watch(backendOffline, (isOffline) => {
               :is-authenticated="isAuthenticated"
               :dirty="dirtyRuntime"
               :current-user="currentUser"
-        @save="saveSettings"
-        @reset="loadSettings"
-        @test-notification="testNotification"
-        @test-email="testEmailNotification"
-        @refresh-user="fetchUserProfile"
-        @update-user="updateUserProfile"
-        :updating-user="loading.userUpdate"
-      />
+              @save="saveSettings"
+              @reset="loadSettings"
+              @test-notification="testNotification"
+              @test-email="testEmailNotification"
+              @refresh-user="fetchUserProfile"
+              @update-user="updateUserProfile"
+              :updating-user="loading.userUpdate"
+            />
           </section>
         </transition>
       </div>
     </main>
   </div>
-  <ConfirmModal />
 </template>
 
 <style scoped>

@@ -2,7 +2,9 @@ package server
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"image/png"
 	"strings"
@@ -22,16 +24,44 @@ type TokenClaims struct {
 }
 
 type AuthService struct {
-	db        *gorm.DB
-	vault     *Vault
-	jwtSecret []byte
+	db           *gorm.DB
+	vault        *Vault
+	jwtPrimary   []byte
+	jwtFallbacks [][]byte
 }
 
-func NewAuthService(db *gorm.DB, vault *Vault, jwtSecret string) *AuthService {
+func NewAuthService(db *gorm.DB, vault *Vault, jwtPrimary string, jwtFallbacks ...string) *AuthService {
+	keys := make([][]byte, 0, len(jwtFallbacks)+1)
+	seen := make(map[string]struct{})
+	if jwtPrimary != "" {
+		keys = append(keys, []byte(jwtPrimary))
+		seen[jwtPrimary] = struct{}{}
+	}
+	for _, fb := range jwtFallbacks {
+		if fb == "" {
+			continue
+		}
+		if _, ok := seen[fb]; ok {
+			continue
+		}
+		seen[fb] = struct{}{}
+		keys = append(keys, []byte(fb))
+	}
+
+	if len(keys) == 0 {
+		keys = append(keys, []byte("dev-secret-key"))
+	}
+
 	return &AuthService{
-		db:        db,
-		vault:     vault,
-		jwtSecret: []byte(jwtSecret),
+		db:         db,
+		vault:      vault,
+		jwtPrimary: keys[0],
+		jwtFallbacks: func() [][]byte {
+			if len(keys) > 1 {
+				return keys[1:]
+			}
+			return nil
+		}(),
 	}
 }
 
@@ -49,23 +79,80 @@ func (s *AuthService) IssueToken(acc Account, tokenType string, expiration time.
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(s.jwtSecret)
+	return token.SignedString(s.jwtPrimary)
+}
+
+func (s *AuthService) IssueRefreshToken(acc *Account, ttl time.Duration) (string, error) {
+	if s.db == nil {
+		return "", errors.New("database not configured")
+	}
+	token := RandomString(64)
+	hash := sha256.Sum256([]byte(token))
+	hashHex := hex.EncodeToString(hash[:])
+	expiry := time.Now().Add(ttl)
+	acc.RefreshTokenHash = hashHex
+	acc.RefreshTokenExpiry = &expiry
+	if err := s.db.Save(acc).Error; err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+func (s *AuthService) ValidateRefreshToken(token string) (*Account, error) {
+	if token == "" {
+		return nil, errors.New("missing token")
+	}
+	hash := sha256.Sum256([]byte(token))
+	hashHex := hex.EncodeToString(hash[:])
+	var account Account
+	silent := s.db.Session(&gorm.Session{Logger: logger.Discard})
+	if err := silent.Where("refresh_token_hash = ?", hashHex).First(&account).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("invalid token")
+		}
+		return nil, err
+	}
+	if account.RefreshTokenExpiry != nil && time.Now().After(*account.RefreshTokenExpiry) {
+		return nil, errors.New("token expired")
+	}
+	return &account, nil
+}
+
+func (s *AuthService) ClearRefreshToken(username string) error {
+	if s.db == nil {
+		return nil
+	}
+	return s.db.Model(&Account{}).Where("username = ?", username).Updates(map[string]interface{}{
+		"refresh_token_hash":   "",
+		"refresh_token_expiry": nil,
+	}).Error
 }
 
 func (s *AuthService) VerifyToken(tokenString string) (*TokenClaims, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &TokenClaims{}, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, errors.New("unexpected signing method")
+	parseWithKey := func(key []byte) (*TokenClaims, error) {
+		token, err := jwt.ParseWithClaims(tokenString, &TokenClaims{}, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, errors.New("unexpected signing method")
+			}
+			return key, nil
+		})
+		if err != nil {
+			return nil, err
 		}
-		return s.jwtSecret, nil
-	})
-
-	if err != nil {
-		return nil, err
+		if claims, ok := token.Claims.(*TokenClaims); ok && token.Valid {
+			return claims, nil
+		}
+		return nil, errors.New("invalid token")
 	}
 
-	if claims, ok := token.Claims.(*TokenClaims); ok && token.Valid {
+	if claims, err := parseWithKey(s.jwtPrimary); err == nil {
 		return claims, nil
+	}
+
+	for _, fb := range s.jwtFallbacks {
+		if claims, err := parseWithKey(fb); err == nil {
+			return claims, nil
+		}
 	}
 
 	return nil, errors.New("invalid token")
@@ -165,7 +252,7 @@ func (s *AuthService) CreateAdmin(username, email, password, name, totpSecret st
 
 	codes := make([]string, 10)
 	for i := 0; i < 10; i++ {
-		codes[i] = randomString(10)
+		codes[i] = RandomString(10)
 	}
 	account.RecoveryCodes = hashCodes(codes)
 
@@ -237,7 +324,7 @@ func (s *AuthService) Enable2FA(username, code string) ([]string, error) {
 	account.TwoFactorEnabled = true
 	codes := make([]string, 10)
 	for i := 0; i < 10; i++ {
-		codes[i] = randomString(10)
+		codes[i] = RandomString(10)
 	}
 	account.RecoveryCodes = hashCodes(codes)
 
@@ -376,7 +463,7 @@ func (s *AuthService) FinalizeReset2FA(tempToken, code string) ([]string, error)
 	// Generate new recovery codes
 	newCodes := make([]string, 10)
 	for i := 0; i < 10; i++ {
-		newCodes[i] = randomString(10)
+		newCodes[i] = RandomString(10)
 	}
 
 	account.RecoveryCodes = hashCodes(newCodes)
@@ -447,7 +534,7 @@ func (s *AuthService) ResetPasswordWithRecoveryCode(username, code, newPassword 
 	return s.db.Save(&account).Error
 }
 
-func (s *AuthService) RegenerateRecoveryCodes(username string) ([]string, error) {
+func (s *AuthService) RegenerateRecoveryCodes(username, password string) ([]string, error) {
 	var account Account
 	if err := s.db.Where("username = ?", username).First(&account).Error; err != nil {
 		return nil, err
@@ -457,9 +544,13 @@ func (s *AuthService) RegenerateRecoveryCodes(username string) ([]string, error)
 		return nil, errors.New("2fa not enabled")
 	}
 
+	if !checkPassword(account.PasswordHash, password) {
+		return nil, errors.New("invalid password")
+	}
+
 	codes := make([]string, 10)
 	for i := 0; i < 10; i++ {
-		codes[i] = randomString(10)
+		codes[i] = RandomString(10)
 	}
 	account.RecoveryCodes = hashCodes(codes)
 
@@ -509,12 +600,18 @@ func (s *AuthService) GeneratePasswordResetToken(email string) (string, *Account
 		return "", nil, errors.New("user not found")
 	}
 
-	token := randomString(32)
+	token := RandomString(32)
+	hash := sha256.Sum256([]byte(token))
+	hashHex := hex.EncodeToString(hash[:])
 	expiry := time.Now().Add(1 * time.Hour)
-	account.ResetToken = token
+	account.ResetToken = ""
+	account.ResetTokenHash = hashHex
 	account.ResetTokenExpiry = &expiry
-
-	if err := s.db.Save(&account).Error; err != nil {
+	if err := s.db.Model(&Account{}).Where("id = ?", account.ID).Updates(map[string]interface{}{
+		"reset_token":        "",
+		"reset_token_hash":   hashHex,
+		"reset_token_expiry": expiry,
+	}).Error; err != nil {
 		return "", nil, err
 	}
 
@@ -522,8 +619,11 @@ func (s *AuthService) GeneratePasswordResetToken(email string) (string, *Account
 }
 
 func (s *AuthService) ResetPasswordWithToken(token, newPassword string) error {
+	hash := sha256.Sum256([]byte(token))
+	hashHex := hex.EncodeToString(hash[:])
+
 	var account Account
-	if err := s.db.Where("reset_token = ?", token).First(&account).Error; err != nil {
+	if err := s.db.Where("reset_token_hash = ?", hashHex).First(&account).Error; err != nil {
 		return errors.New("invalid token")
 	}
 
@@ -533,6 +633,7 @@ func (s *AuthService) ResetPasswordWithToken(token, newPassword string) error {
 
 	account.PasswordHash = hashSecret(newPassword)
 	account.ResetToken = ""
+	account.ResetTokenHash = ""
 	account.ResetTokenExpiry = nil
 
 	return s.db.Save(&account).Error

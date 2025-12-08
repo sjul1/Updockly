@@ -11,6 +11,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 func (s *Server) runningHistoryHandler(c *gin.Context) {
@@ -36,7 +37,9 @@ func (s *Server) ensureRunningSnapshot(ctx context.Context) {
 		return
 	}
 
-	if err := s.db.AutoMigrate(&RunningSnapshot{}); err != nil {
+	silentDB := s.db.Session(&gorm.Session{Logger: logger.Discard})
+
+	if err := silentDB.AutoMigrate(&RunningSnapshot{}); err != nil {
 		return
 	}
 
@@ -48,10 +51,10 @@ func (s *Server) ensureRunningSnapshot(ctx context.Context) {
 	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
 
 	var existing RunningSnapshot
-	err := s.db.Where("date = ?", dayStart).First(&existing).Error
+	err := silentDB.Where("date = ?", dayStart).First(&existing).Error
 	if err == nil {
 		running, total := s.currentRunningCounts(ctx)
-		_ = s.db.Model(&existing).Updates(map[string]interface{}{
+		_ = silentDB.Model(&existing).Updates(map[string]interface{}{
 			"running": running,
 			"total":   total,
 		}).Error
@@ -67,7 +70,7 @@ func (s *Server) ensureRunningSnapshot(ctx context.Context) {
 		Running: running,
 		Total:   total,
 	}
-	_ = s.db.Create(&snap).Error
+	_ = silentDB.Create(&snap).Error
 }
 
 func (s *Server) currentRunningCounts(ctx context.Context) (running int, total int) {

@@ -1,6 +1,6 @@
 # Updockly
 
-![GPLv3 License](https://img.shields.io/badge/License-GPLv3-blue.svg) ![Go Badge](https://img.shields.io/badge/Go-1.22+-00ADD8.svg?logo=go&logoColor=white) ![Vue Badge](https://img.shields.io/badge/Vue-3-42b883.svg?logo=vuedotjs&logoColor=white) ![Docker Badge](https://img.shields.io/badge/Docker-Supported-2496ED.svg?logo=docker&logoColor=white)
+![GPLv3 License](https://img.shields.io/badge/License-GPLv3-blue.svg) ![Go Badge](https://img.shields.io/badge/Go-1.25+-00ADD8.svg?logo=go&logoColor=white) ![Vue Badge](https://img.shields.io/badge/Vue-3-42b883.svg?logo=vuedotjs&logoColor=white) ![Docker Badge](https://img.shields.io/badge/Docker-Supported-2496ED.svg?logo=docker&logoColor=white)
 
 A robust, self-hosted Docker container management platform featuring a **Go** backend and a **Vue 3** frontend.
 **Updockly** provides a unified dashboard to monitor, manage, and auto-update containers across multiple hosts via lightweight agents.
@@ -76,15 +76,18 @@ Updockly is configured using environment variables. You can set these in your `.
 
 ## Core Settings
 
-| Variable             | Description                                                                                      | Default Value                                                            |
-| :------------------- | :----------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------- |
-| `DATABASE_URL`       | Connection string for the database (PostgreSQL or SQLite).                                       | `postgres://updockly:updockly@localhost:5432/updocklydb?sslmode=disable` |
-| `SECRET_KEY`         | **Important.** Key used for encryption and JWT signing. Must be strong and random in production. | `change_me_to_a_secure_random_string`                                    |
-| `CLIENT_ORIGIN`      | The URL where the frontend is accessible. Used for CORS and redirects.                           | `http://localhost:8080`                                                  |
-| `SERVER_ADDR`        | The address and port the backend server listens on.                                              | `:5000`                                                                  |
-| `TIMEZONE`           | Timezone used for scheduling and logging (e.g., `Europe/Paris`).                                 | `UTC`                                                                    |
-| `SERVER_SAN_IPS`     | Comma-separated list of IP addresses to add to the self-signed certificate.                      | `127.0.0.1,0.0.0.0`                                                      |
-| `SERVER_SAN_DOMAINS` | Comma-separated list of domains to add to the self-signed certificate.                           | `localhost,backend,updockly-backend`                                     |
+| Variable                   | Description                                                                                | Default Value                                           |
+| :------------------------- | :----------------------------------------------------------------------------------------- | :------------------------------------------------------ |
+| `DATABASE_URL`             | Connection string for the database (PostgreSQL or SQLite).                                 | `postgres://updockly:updockly@localhost:5432/updocklydb |
+| `JWT_SECRET`               | **Important.** Primary JWT signing key (generated on first boot if missing).               | (auto-generated)                                        |
+| `VAULT_KEY`                | **Important.** Vault encryption key for 2FA secrets (generated on first boot if missing).  | (auto-generated)                                        |
+| `CLIENT_ORIGIN`            | The URL where the frontend is accessible. Used for CORS and redirects.                     | `http://localhost:8080`                                 |
+| `SERVER_ADDR`              | The address and port the backend server listens on.                                        | `:5000`                                                 |
+| `TIMEZONE`                 | Timezone used for scheduling and logging (e.g., `Europe/Paris`).                           | `UTC`                                                   |
+| `SERVER_SAN_IPS`           | Comma-separated list of IP addresses to add to the self-signed certificate.                | `127.0.0.1,0.0.0.0`                                     |
+| `SERVER_SAN_DOMAINS`       | Comma-separated list of domains to add to the self-signed certificate.                     | `localhost,backend,updockly-backend`                    |
+| `HIDE_SUPPORT_BUTTON`      | Hide the “Support the project” sidebar CTA in the UI (`true`/`false`).                     | `false`                                                 |
+| `AGENT_REQUIRE_IP_BINDING` | Require agent tokens to bind to the first IP seen; rejects tokens without IP on first use. | `false`                                                 |
 
 ## Single Sign-On (SSO)
 

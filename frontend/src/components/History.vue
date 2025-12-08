@@ -16,12 +16,13 @@ import {
   Check,
   X,
   HelpCircle,
+  AlertTriangle,
 } from "lucide-vue-next";
 import { ApiError, api, type UpdateHistory } from "../services/api";
 import { useToast } from "vue-toastification";
 import ConfirmModal from "./ConfirmModal.vue";
 
-type StatusFilter = "all" | "success" | "error";
+type StatusFilter = "all" | "success" | "warning" | "error";
 type SourceFilter = "all" | "local" | "agent";
 
 const toast = useToast();
@@ -65,10 +66,11 @@ const isInfoEntry = (entry: UpdateHistory) => entry.status === "info";
 const stats = computed(() => {
   const total = entries.value.length;
   const success = entries.value.filter((e) => e.status === "success").length;
+  const warnings = entries.value.filter((e) => e.status === "warning").length;
   const failed = entries.value.filter((e) => e.status === "error").length;
   const agent = entries.value.filter((e) => e.source === "agent").length;
   const local = entries.value.filter((e) => e.source === "local").length;
-  return { total, success, failed, agent, local };
+  return { total, success, warnings, failed, agent, local };
 });
 
 const rollbackImageMap = computed<Record<string, string>>(() => {
@@ -168,6 +170,7 @@ const filteredEntries = computed(() => {
 
 const statusBadge = (status: string) => {
   if (status === "success") return "badge-success";
+  if (status === "warning") return "badge-warning";
   if (status === "error") return "badge-error";
   if (status === "info") return "badge-info";
   return "badge-ghost";
@@ -389,6 +392,9 @@ onBeforeUnmount(() => {
             <div class="badge badge-success gap-2">
               <CheckCircle2 class="h-3.5 w-3.5" /> Success: {{ stats.success }}
             </div>
+            <div class="badge badge-warning gap-2">
+              <AlertCircle class="h-3.5 w-3.5" /> Warnings: {{ stats.warnings }}
+            </div>
             <div class="badge badge-error gap-2">
               <AlertCircle class="h-3.5 w-3.5" /> Failed: {{ stats.failed }}
             </div>
@@ -473,6 +479,8 @@ onBeforeUnmount(() => {
                           ? "All"
                           : statusFilter === "success"
                           ? "Success"
+                          : statusFilter === "warning"
+                          ? "Warnings"
                           : "Failed"
                       }}
                     </span>
@@ -512,6 +520,17 @@ onBeforeUnmount(() => {
                             class="w-4 h-4 text-success"
                           />
                           <span>Failed</span>
+                        </div>
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" @click="statusFilter = 'warning'">
+                        <div class="flex items-center gap-2">
+                          <Check
+                            v-if="statusFilter === 'warning'"
+                            class="w-4 h-4 text-success"
+                          />
+                          <span>Warnings</span>
                         </div>
                       </button>
                     </li>
@@ -682,11 +701,12 @@ onBeforeUnmount(() => {
                       class="w-4 h-4 text-success"
                       aria-label="Success"
                     />
-                    <AlertCircle
-                      v-else-if="entry.status === 'error'"
-                      class="w-4 h-4 text-error"
-                      aria-label="Failed"
+                    <AlertTriangle
+                      v-else-if="entry.status === 'warning'"
+                      class="w-4 h-4 text-warning"
+                      aria-label="Warning"
                     />
+                    <AlertCircle v-else-if="entry.status === 'error'" class="w-4 h-4 text-error" aria-label="Failed" />
                     <HelpCircle
                       v-else-if="isInfoEntry(entry) || isAutoUpdateEntry(entry)"
                       class="w-4 h-4 text-info"

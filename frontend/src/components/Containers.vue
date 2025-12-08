@@ -15,26 +15,19 @@ import {
 } from "../services/api";
 import {
   RefreshCw,
-  AlertCircle,
-  Download,
-  CircleX,
-  ArrowDownUp,
   ShieldCheck,
   Play,
   Pause,
   Sparkles,
-  ChevronDown,
-  ChevronUp,
-  X,
-  Check,
-  MoreVertical,
   Square,
   FileText,
-  Network,
-  Cpu,
-  MemoryStick,
+  ServerCog,
 } from "lucide-vue-next";
 import { useToast } from "vue-toastification";
+import SectionHeader from "./SectionHeader.vue";
+import PortsModal from "./containers/PortsModal.vue";
+import AgentContainersList from "./containers/AgentContainersList.vue";
+import LocalContainersList from "./containers/LocalContainersList.vue";
 
 interface Progress {
   status?: string;
@@ -45,6 +38,8 @@ interface Progress {
   };
   id?: string;
   error?: string;
+  rolledBack?: boolean;
+  rollbackMessage?: string;
 }
 
 const containers = ref<Container[]>([]);
@@ -136,14 +131,10 @@ const openPortsModal = (host: string) => {
   portsFilter.value = "";
 };
 
-const highlightMatch = (text: string, filter: string) => {
-  if (!filter) return text;
-  const regex = new RegExp(`(${filter})`, "gi");
-  return text.replace(regex, '<span class="bg-warning/30 font-bold">$1</span>');
-};
 const progress = reactive(new Map<string, Progress[]>());
 const refreshTimer = ref<number | null>(null);
 const REFRESH_INTERVAL = 30000;
+const REFRESH_JITTER = 5000;
 const updateAvailableOverrides = reactive<Record<string, boolean>>({});
 const autoRefreshEnabled = ref(true);
 const quickActionState = reactive<{
@@ -276,6 +267,22 @@ const sort = (key: keyof Container) => {
     sortOrder.value = "asc";
   }
 };
+
+const handleRowCheckUpdate = (container: Container) => checkUpdate(container);
+const handleRowInstall = (container: Container) => installUpdate(container);
+const handleRowToggleAuto = (container: Container) =>
+  toggleAutoUpdate(container);
+const handleRowOpenQuick = (container: Container, evt: MouseEvent) =>
+  openLocalQuickAction(container, evt);
+const handleAgentToggleAuto = (agent: Agent, container: AgentContainer) =>
+  toggleAgentAutoUpdate(agent, container);
+const handleAgentInstall = (agent: Agent, container: AgentContainer) =>
+  installAgentContainer(agent, container);
+const handleAgentOpenQuick = (
+  agent: Agent,
+  container: AgentContainer,
+  evt: MouseEvent
+) => openAgentQuickAction(agent, container, evt);
 
 const fetchContainers = async (options: { silent?: boolean } = {}) => {
   const { silent = false } = options;
@@ -414,6 +421,12 @@ const fetchHostInfo = async () => {
   }
 };
 
+const refreshAll = () => {
+  void fetchContainers();
+  void fetchAgentContainers();
+  void fetchHostInfo();
+};
+
 const checkUpdate = async (container: Container | null | undefined) => {
   if (!container) return;
   checkingUpdate[container.ID] = true;
@@ -442,6 +455,12 @@ const installUpdate = (container: Container) => {
   api.updateContainer(container.ID, (data: Progress) => {
     if (data.error) {
       installing[container.ID] = false;
+      if (data.rolledBack) {
+        toast.info(
+          data.rollbackMessage ??
+            `Update failed but ${container.Name} was rolled back to its previous state.`
+        );
+      }
       toast.error(data.error);
       return;
     }
@@ -484,7 +503,8 @@ const toggleAutoUpdate = async (container: Container) => {
 
 const startAutoRefresh = () => {
   if (refreshTimer.value) return;
-  refreshTimer.value = window.setInterval(autoRefreshTick, REFRESH_INTERVAL);
+  const baseInterval = REFRESH_INTERVAL + Math.floor(Math.random() * REFRESH_JITTER);
+  refreshTimer.value = window.setInterval(autoRefreshTick, baseInterval);
 };
 
 const stopAutoRefresh = () => {
@@ -888,492 +908,108 @@ const sortAgentContainers = (agentId: string, key: keyof AgentContainer) => {
 
 <template>
   <div class="space-y-6 w-full">
-    <div
-      class="relative overflow-hidden rounded-3xl border border-base-200 bg-gradient-to-r from-primary/10 via-secondary/10 to-accent/10 p-6 shadow-xl"
+    <SectionHeader
+      title="Containers"
+      :icon="ServerCog"
     >
-      <div
-        class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between"
-      >
-        <div class="space-y-2">
-          <div
-            class="inline-flex items-center gap-2 rounded-full bg-base-100/80 px-3 py-1 text-xs font-semibold shadow"
-          >
-            <Sparkles class="h-4 w-4 text-primary" />
-            Fleet status
-          </div>
-          <h1 class="text-3xl font-bold pr-36 md:pr-0">Containers</h1>
-          <p class="text-sm text-base-content/70 max-w-2xl">
-            Observe running services, trigger updates, and keep auto-update in
-            sync.
-          </p>
-          <div class="flex flex-wrap gap-3">
-            <div class="badge badge-success gap-2">
-              <Play class="h-3.5 w-3.5" /> Running:
-              {{ fleetStats.running }}
-            </div>
-            <div class="badge badge-neutral gap-2">
-              <Pause class="h-3.5 w-3.5" /> Stopped:
-              {{ fleetStats.stopped }}
-            </div>
-            <div class="badge badge-info gap-2">
-              <ShieldCheck class="h-3.5 w-3.5" /> Auto-update:
-              {{ fleetStats.autoUpdate }}
-            </div>
-          </div>
+      <template #eyebrow>
+        <Sparkles class="h-4 w-4 text-primary" />
+        Fleet status
+      </template>
+      <template #subtitle>
+        Observe running services, trigger updates, and keep auto-update in sync.
+      </template>
+      <template #badges>
+        <div class="badge badge-success gap-2">
+          <Play class="h-3.5 w-3.5" /> Running:
+          {{ fleetStats.running }}
         </div>
-        <div
-          class="absolute top-6 right-6 flex flex-col items-end gap-2 md:static md:self-start"
+        <div class="badge badge-neutral gap-2">
+          <Pause class="h-3.5 w-3.5" /> Stopped:
+          {{ fleetStats.stopped }}
+        </div>
+        <div class="badge badge-info gap-2">
+          <ShieldCheck class="h-3.5 w-3.5" /> Auto-update:
+          {{ fleetStats.autoUpdate }}
+        </div>
+      </template>
+      <template #meta>
+        <span class="text-xs text-base-content/60">
+          {{
+            lastUpdated
+              ? `Updated ${formatTime(lastUpdated)}`
+              : "Updated --:--:--"
+          }}
+        </span>
+      </template>
+      <template #actions>
+        <button
+          class="btn btn-ghost btn-square"
+          @click="refreshAll"
+          :disabled="loading || loadingAgents"
+          aria-label="Refresh containers"
+          title="Refresh containers and agents"
         >
-          <span class="text-xs text-base-content/60">
-            {{
-              lastUpdated
-                ? `Updated ${formatTime(lastUpdated)}`
-                : "Updated --:--:--"
-            }}
-          </span>
-          <div class="flex items-center gap-2">
-            <button
-              class="btn btn-ghost btn-square"
-              @click="fetchContainers({ silent: true })"
-              :disabled="loading"
-              aria-label="Refresh containers"
-              title="Refresh containers"
-            >
-              <RefreshCw class="w-4 h-4" :class="{ 'animate-spin': loading }" />
-            </button>
-            <button
-              type="button"
-              class="badge gap-2 border border-primary/40 cursor-pointer"
-              :class="
-                autoRefreshEnabled
-                  ? 'badge-primary text-primary-content'
-                  : 'badge-ghost text-base-content'
-              "
-              @click="toggleAutoRefresh"
-              :aria-pressed="autoRefreshEnabled"
-              :title="
-                autoRefreshEnabled
-                  ? 'Click to pause auto-refresh'
-                  : 'Click to resume auto-refresh'
-              "
-            >
-              <Sparkles class="h-3.5 w-3.5" />
-              {{ autoRefreshEnabled ? "Live" : "Paused" }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+          <RefreshCw
+            class="w-4 h-4"
+            :class="{ 'animate-spin': loading || loadingAgents }"
+          />
+        </button>
+        <button
+          type="button"
+          class="badge gap-2 border border-primary/40 cursor-pointer"
+          :class="
+            autoRefreshEnabled
+              ? 'badge-primary text-primary-content'
+              : 'badge-ghost text-base-content'
+          "
+          @click="toggleAutoRefresh"
+          :aria-pressed="autoRefreshEnabled"
+          :title="
+            autoRefreshEnabled
+              ? 'Click to pause auto-refresh'
+              : 'Click to resume auto-refresh'
+          "
+        >
+          <Sparkles class="h-3.5 w-3.5" />
+          {{ autoRefreshEnabled ? "Live" : "Paused" }}
+        </button>
+      </template>
+    </SectionHeader>
 
     <div v-if="loading" class="text-center py-12">
       <p>Loading containers...</p>
     </div>
 
-    <div
-      class="rounded-2xl border border-base-200 shadow-lg bg-base-100 relative overflow-visible"
+    <LocalContainersList
       v-else
-    >
-      <div
-        class="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between px-4 py-3 border-b border-base-200 cursor-pointer"
-        @click="toggleContainersCollapse"
-      >
-        <div class="flex flex-col">
-          <div class="flex items-center gap-2 flex-wrap">
-            <span class="text-lg font-semibold">Localhost</span>
-            <span class="text-sm text-base-content/60 sm:hidden">
-              {{ hostInfo.hostname || "unknown" }}
-            </span>
-            <span class="inline-flex h-2 w-2 rounded-full bg-success"></span>
-          </div>
-          <div class="text-xs text-base-content/60 mt-1 hidden sm:block">
-            {{ hostInfo.hostname || "unknown" }} ·
-            {{ hostInfo.dockerVersion || "unknown" }} ·
-            {{ hostInfo.platform || "unknown" }} · Last seen:
-            {{ hostInfo.lastSeen ? formatTime(hostInfo.lastSeen) : "never" }}
-          </div>
-          <div class="text-xs text-base-content/60 mt-1 sm:hidden">
-            <div class="flex flex-wrap gap-x-2">
-              <div>
-                {{ hostInfo.dockerVersion || "unknown" }} ·
-                {{ hostInfo.platform || "unknown" }}
-              </div>
-              <div>
-                Last seen:
-                {{
-                  hostInfo.lastSeen ? formatTime(hostInfo.lastSeen) : "never"
-                }}
-              </div>
-            </div>
-          </div>
-        </div>
-        <div
-          class="flex items-center gap-2 mt-2 sm:mt-0 self-start sm:self-center"
-        >
-          <div v-if="(hostInfo as any).cpu !== undefined" class="badge badge-ghost gap-1 font-mono text-xs hidden sm:inline-flex">
-            <Cpu class="w-3 h-3" /> {{ ((hostInfo as any).cpu).toFixed(1) }}%
-          </div>
-          <div v-if="(hostInfo as any).memory !== undefined" class="badge badge-ghost gap-1 font-mono text-xs hidden sm:inline-flex">
-            <MemoryStick class="w-3 h-3" /> {{ ((hostInfo as any).memory).toFixed(1) }}%
-          </div>
-          <button
-            class="btn btn-ghost btn-xs"
-            @click.stop="openPortsModal(hostInfo.hostname || 'Localhost')"
-            title="View Port Mapping"
-          >
-            <Network class="w-4 h-4" />
-          </button>
-          <span class="badge badge-ghost gap-1">
-            {{ containers.length || 0 }} containers
-          </span>
-          <button class="btn btn-ghost btn-xs" tabindex="-1">
-            <ChevronDown v-if="containersCollapsed" class="w-4 h-4" />
-            <ChevronUp v-else class="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-      <div
-        class="transition-all duration-300"
-        :style="
-          containersCollapsed
-            ? 'max-height:0; opacity:0; overflow:hidden'
-            : 'max-height:9999px; opacity:1; overflow:visible'
-        "
-      >
-        <div class="px-4 py-3 border-b border-base-200">
-          <div class="flex flex-wrap gap-4 items-end">
-            <div class="form-control w-full sm:w-auto relative">
-              <input
-                type="text"
-                placeholder="Search by name..."
-                class="input input-bordered input-sm rounded-xl w-full sm:min-w-[240px] pr-10"
-                v-model="filterText"
-              />
-              <button
-                v-if="filterText"
-                class="btn btn-ghost btn-xs absolute right-1 top-1/2 -translate-y-1/2"
-                aria-label="Clear search"
-                @click="filterText = ''"
-              >
-                <X class="w-4 h-4" />
-              </button>
-            </div>
-            <div class="grid grid-cols-2 gap-2 w-full sm:contents">
-              <div class="form-control w-full sm:w-auto">
-                <div class="flex items-center gap-2">
-                  <div class="dropdown dropdown-bottom w-full sm:w-auto">
-                    <label
-                      tabindex="0"
-                      class="btn btn-ghost btn-sm rounded-xl border border-base-300 px-3 w-full sm:w-auto justify-between"
-                    >
-                      <span class="truncate"
-                        >Status: {{ statusLabel(statusFilter) }}</span
-                      >
-                      <ChevronDown class="w-4 h-4 opacity-70 flex-shrink-0" />
-                    </label>
-                    <ul
-                      tabindex="0"
-                      class="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-52 border border-base-200 z-[1]"
-                    >
-                      <li>
-                        <button type="button" @click="statusFilter = 'all'">
-                          <div class="flex items-center gap-2">
-                            <Check
-                              v-if="statusFilter === 'all'"
-                              class="w-4 h-4 text-success"
-                            />
-                            <span>All Statuses</span>
-                          </div>
-                        </button>
-                      </li>
-                      <li>
-                        <button type="button" @click="statusFilter = 'running'">
-                          <div class="flex items-center gap-2">
-                            <Check
-                              v-if="statusFilter === 'running'"
-                              class="w-4 h-4 text-success"
-                            />
-                            <span>Running</span>
-                          </div>
-                        </button>
-                      </li>
-                      <li>
-                        <button type="button" @click="statusFilter = 'stopped'">
-                          <div class="flex items-center gap-2">
-                            <Check
-                              v-if="statusFilter === 'stopped'"
-                              class="w-4 h-4 text-success"
-                            />
-                            <span>Stopped</span>
-                          </div>
-                        </button>
-                      </li>
-                    </ul>
-                  </div>
-                  <button
-                    v-if="statusFilter !== 'all'"
-                    class="btn btn-ghost btn-xs hidden sm:inline-flex"
-                    aria-label="Clear status filter"
-                    @click="statusFilter = 'all'"
-                  >
-                    <X class="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-              <div class="form-control w-full sm:w-auto">
-                <div class="flex items-center gap-2">
-                  <div class="dropdown dropdown-bottom w-full sm:w-auto">
-                    <label
-                      tabindex="0"
-                      class="btn btn-ghost btn-sm rounded-xl border border-base-300 px-3 w-full sm:w-auto justify-between"
-                    >
-                      <span class="truncate"
-                        >Auto-update:
-                        {{ autoUpdateLabel(autoUpdateFilter) }}</span
-                      >
-                      <ChevronDown class="w-4 h-4 opacity-70 flex-shrink-0" />
-                    </label>
-                    <ul
-                      tabindex="0"
-                      class="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 border border-base-200 z-[1]"
-                    >
-                      <li>
-                        <button type="button" @click="autoUpdateFilter = 'all'">
-                          <div class="flex items-center gap-2">
-                            <Check
-                              v-if="autoUpdateFilter === 'all'"
-                              class="w-4 h-4 text-success"
-                            />
-                            <span>All Auto-updates</span>
-                          </div>
-                        </button>
-                      </li>
-                      <li>
-                        <button
-                          type="button"
-                          @click="autoUpdateFilter = 'enabled'"
-                        >
-                          <div class="flex items-center gap-2">
-                            <Check
-                              v-if="autoUpdateFilter === 'enabled'"
-                              class="w-4 h-4 text-success"
-                            />
-                            <span>Enabled</span>
-                          </div>
-                        </button>
-                      </li>
-                      <li>
-                        <button
-                          type="button"
-                          @click="autoUpdateFilter = 'disabled'"
-                        >
-                          <div class="flex items-center gap-2">
-                            <Check
-                              v-if="autoUpdateFilter === 'disabled'"
-                              class="w-4 h-4 text-success"
-                            />
-                            <span>Disabled</span>
-                          </div>
-                        </button>
-                      </li>
-                    </ul>
-                  </div>
-                  <button
-                    v-if="autoUpdateFilter !== 'all'"
-                    class="btn btn-ghost btn-xs hidden sm:inline-flex"
-                    aria-label="Clear auto-update filter"
-                    @click="autoUpdateFilter = 'all'"
-                  >
-                    <X class="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-            <div
-              class="ml-auto text-xs text-base-content/60 w-full sm:w-auto text-right"
-            >
-              Showing {{ filteredContainers.length }} of
-              {{ containers.length }} records
-            </div>
-          </div>
-        </div>
-        <div
-          v-if="filteredContainers.length === 0"
-          class="px-4 py-8 text-center text-sm text-base-content/70"
-        >
-          <div class="flex flex-col items-center gap-3">
-            <CircleX class="w-12 h-12 text-error" />
-            <div class="space-y-1">
-              <div class="text-base font-semibold">No Containers Found</div>
-              <div>No containers match the current filters.</div>
-            </div>
-          </div>
-        </div>
-        <div v-else class="overflow-x-auto">
-          <table class="table table-fixed w-full">
-            <thead>
-              <tr>
-                <th
-                  @click="sort('State')"
-                  class="cursor-pointer w-12 sm:w-28 lg:w-54 p-2 sm:p-4"
-                >
-                  <div
-                    class="flex items-center justify-center sm:justify-start gap-2"
-                  >
-                    <span class="hidden sm:inline">Status</span>
-                    <ArrowDownUp class="w-4 h-4 shrink-0" />
-                  </div>
-                </th>
-
-                <th @click="sort('Name')" class="cursor-pointer">
-                  <div class="flex items-center gap-2">
-                    Name <ArrowDownUp class="w-4 h-4 shrink-0" />
-                  </div>
-                </th>
-
-                <th
-                  @click="sort('AutoUpdate')"
-                  class="cursor-pointer text-center w-14 sm:w-32 p-1"
-                >
-                  <div class="flex items-center justify-center gap-1">
-                    <span class="hidden sm:inline">Auto-Update</span>
-                    <ArrowDownUp class="w-4 h-4 shrink-0" />
-                  </div>
-                </th>
-
-                <th class="text-right w-[5.5rem] sm:w-36">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <template
-                v-for="container in filteredContainers"
-                :key="container.ID"
-              >
-                <tr class="hover group">
-                  <td class="p-2 sm:p-4">
-                    <div
-                      class="flex items-center justify-center sm:justify-start gap-2"
-                    >
-                      <RefreshCw
-                        v-if="
-                          installing[container.ID] ||
-                          checkingUpdate[container.ID]
-                        "
-                        class="w-5 h-5 text-primary animate-spin shrink-0"
-                        title="Updating"
-                      />
-                      <AlertCircle
-                        v-else-if="container.UpdateAvailable"
-                        class="w-5 h-5 text-warning shrink-0"
-                        title="Update Available"
-                      />
-                      <span
-                        v-else
-                        class="h-3 w-3 rounded-full shrink-0"
-                        :class="{
-                          'bg-success': container.State === 'running',
-                          'bg-error': container.State !== 'running',
-                        }"
-                      ></span>
-
-                      <span class="font-medium hidden sm:block truncate">
-                        {{ container.Status }}
-                      </span>
-                    </div>
-                  </td>
-
-                  <td class="max-w-0 align-middle">
-                    <div class="flex flex-col justify-center">
-                      <div
-                        class="font-mono font-bold truncate text-sm sm:text-base"
-                        :title="container.Name"
-                      >
-                        {{ container.Name }}
-                      </div>
-                      <div
-                        class="font-mono text-xs text-base-content/50 truncate"
-                        :title="container.Image"
-                      >
-                        {{ container.Image }}
-                      </div>
-                    </div>
-                  </td>
-
-                  <td class="text-center p-1">
-                    <label
-                      class="toggle text-base-content scale-75 sm:scale-100 origin-center"
-                    >
-                      <input
-                        type="checkbox"
-                        :checked="container.AutoUpdate"
-                        @click="toggleAutoUpdate(container)"
-                      />
-                      <svg
-                        aria-label="disabled"
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="4"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      >
-                        <path d="M18 6 6 18" />
-                        <path d="m6 6 12 12" />
-                      </svg>
-                      <svg
-                        aria-label="enabled"
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 24 24"
-                      >
-                        <g
-                          stroke-linejoin="round"
-                          stroke-linecap="round"
-                          stroke-width="4"
-                          fill="none"
-                          stroke="currentColor"
-                        >
-                          <path d="M20 6 9 17l-5-5"></path>
-                        </g>
-                      </svg>
-                    </label>
-                  </td>
-
-                  <td class="text-right p-2 sm:p-4">
-                    <div class="flex justify-end items-center gap-1 relative">
-                      <button
-                        v-if="
-                          container.UpdateAvailable || installing[container.ID]
-                        "
-                        class="btn btn-sm btn-info px-2 sm:px-3"
-                        @click="installUpdate(container)"
-                        :disabled="installing[container.ID]"
-                        title="Install Update"
-                      >
-                        <Download
-                          v-if="!installing[container.ID]"
-                          class="w-4 h-4"
-                        />
-                        <RefreshCw v-else class="w-4 h-4 animate-spin" />
-                        <span class="hidden sm:inline ml-1">Install</span>
-                      </button>
-                      <div class="relative" style="z-index: 60">
-                        <button
-                          class="btn btn-ghost btn-sm btn-square"
-                          aria-label="Quick actions"
-                          @click="(e) => openLocalQuickAction(container, e)"
-                        >
-                          <MoreVertical class="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              </template>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+      :containers="containers"
+      :filtered-containers="filteredContainers"
+      :host-info="hostInfo as any"
+      :loading="loading"
+      :last-updated="lastUpdated"
+      :format-time="formatTime"
+      :containers-collapsed="containersCollapsed"
+      :filter-text="filterText"
+      :status-filter="statusFilter"
+      :auto-update-filter="autoUpdateFilter"
+      :installing="installing"
+      :checking-update="checkingUpdate"
+      :update-available-overrides="updateAvailableOverrides"
+      :auto-refresh-enabled="autoRefreshEnabled"
+      @toggle-collapse="toggleContainersCollapse"
+      @open-ports="openPortsModal"
+      @set-filter-text="(val: string) => (filterText = val)"
+      @set-status-filter="(val: 'all' | 'running' | 'stopped') => (statusFilter = val)"
+      @set-auto-filter="(val: 'all' | 'enabled' | 'disabled') => (autoUpdateFilter = val)"
+      @sort="sort"
+      @refresh="fetchContainers({ silent: true })"
+      @toggle-auto-refresh="toggleAutoRefresh"
+      @check-update="handleRowCheckUpdate"
+      @install="handleRowInstall"
+      @toggle-auto="handleRowToggleAuto"
+      @open-quick="handleRowOpenQuick"
+    />
 
     <div v-if="loadingAgents" class="text-sm text-base-content/60">
       Loading agents...
@@ -1384,474 +1020,33 @@ const sortAgentContainers = (agentId: string, key: keyof AgentContainer) => {
     >
       No agent container data yet. Ensure agents have reported in.
     </div>
-    <div v-else class="space-y-6">
-      <div
-        v-for="agent in agentsWithContainers"
-        :key="agent.id"
-        class="rounded-2xl border border-base-200 shadow-lg bg-base-100 relative overflow-visible"
-      >
-        <div
-          class="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between px-4 py-3 border-b border-base-200 cursor-pointer"
-          @click="toggleAgentCollapse(agent.id)"
-        >
-          <div class="flex flex-col">
-            <div class="flex items-center gap-2 flex-wrap">
-              <span class="text-lg font-semibold">{{ agent.name }}</span>
-              <span class="text-sm text-base-content/60 sm:hidden">
-                {{ agent.hostname || "unknown host" }}
-              </span>
-              <span
-                class="inline-flex h-2 w-2 rounded-full"
-                :class="agentOnline(agent) ? 'bg-success' : 'bg-base-300'"
-              ></span>
-            </div>
-            <div class="text-xs text-base-content/60 mt-1 hidden sm:block">
-              {{ agent.hostname || "unknown host" }} ·
-              {{ agent.dockerVersion || "Awaiting heartbeat" }} ·
-              {{ agent.platform || "platform unknown" }} · Last seen:
-              {{ agent.lastSeen ? formatTime(agent.lastSeen) : "never" }}
-            </div>
-            <div class="text-xs text-base-content/60 mt-1 sm:hidden">
-              <div class="flex flex-wrap gap-x-2">
-                <div>
-                  {{ agent.dockerVersion || "Awaiting heartbeat" }} ·
-                  {{ agent.platform || "platform unknown" }}
-                </div>
-                <div>
-                  Last seen:
-                  {{ agent.lastSeen ? formatTime(agent.lastSeen) : "never" }}
-                </div>
-              </div>
-            </div>
-          </div>
-          <div
-            class="flex items-center gap-2 mt-2 sm:mt-0 self-start sm:self-center"
-          >
-            <div v-if="(agent as any).cpu !== undefined" class="badge badge-ghost gap-1 font-mono text-xs hidden sm:inline-flex">
-              <Cpu class="w-3 h-3" /> {{ ((agent as any).cpu).toFixed(1) }}%
-            </div>
-            <div v-if="(agent as any).memory !== undefined" class="badge badge-ghost gap-1 font-mono text-xs hidden sm:inline-flex">
-              <MemoryStick class="w-3 h-3" /> {{ ((agent as any).memory).toFixed(1) }}%
-            </div>
-            <button
-              class="btn btn-ghost btn-xs"
-              @click.stop="openPortsModal(agent.name)"
-              title="View Port Mapping"
-            >
-              <Network class="w-4 h-4" />
-            </button>
-            <span class="badge badge-ghost gap-1">
-              {{ agent.containers?.length || 0 }} containers
-            </span>
-            <button class="btn btn-ghost btn-xs" tabindex="-1">
-              <ChevronDown v-if="agentCollapsed[agent.id]" class="w-4 h-4" />
-              <ChevronUp v-else class="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-        <div
-          class="transition-all duration-300"
-          :style="
-            agentCollapsed[agent.id]
-              ? 'max-height:0; opacity:0; overflow:hidden'
-              : 'max-height:9999px; opacity:1; overflow:visible'
-          "
-        >
-          <div class="px-4 py-3 border-b border-base-200">
-            <div class="flex flex-wrap gap-4 items-end">
-              <div class="form-control w-full sm:w-auto relative">
-                <input
-                  type="text"
-                  placeholder="Search by name..."
-                  class="input input-bordered input-sm rounded-xl w-full sm:min-w-[220px] pr-10"
-                  v-model="agentFilterText[agent.id]"
-                />
-                <button
-                  v-if="agentFilterText[agent.id]"
-                  class="btn btn-ghost btn-xs absolute right-1 top-1/2 -translate-y-1/2"
-                  aria-label="Clear search"
-                  @click="agentFilterText[agent.id] = ''"
-                >
-                  <X class="w-4 h-4" />
-                </button>
-              </div>
-              <div class="grid grid-cols-2 gap-2 w-full sm:contents">
-                <div class="form-control w-full sm:w-auto">
-                  <div class="flex items-center gap-2">
-                    <div class="dropdown dropdown-bottom w-full sm:w-auto">
-                      <label
-                        tabindex="0"
-                        class="btn btn-ghost btn-sm rounded-xl border border-base-300 px-3 w-full sm:w-auto justify-between"
-                      >
-                        <span class="truncate">
-                          Status: {{ statusLabel(agentStatusFilter[agent.id]) }}
-                        </span>
-                        <ChevronDown class="w-4 h-4 opacity-70 flex-shrink-0" />
-                      </label>
-                      <ul
-                        tabindex="0"
-                        class="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-52 border border-base-200 z-[1]"
-                      >
-                        <li>
-                          <button
-                            type="button"
-                            @click="agentStatusFilter[agent.id] = 'all'"
-                          >
-                            <div class="flex items-center gap-2">
-                              <Check
-                                v-if="agentStatusFilter[agent.id] === 'all'"
-                                class="w-4 h-4 text-success"
-                              />
-                              <span>All Statuses</span>
-                            </div>
-                          </button>
-                        </li>
-                        <li>
-                          <button
-                            type="button"
-                            @click="agentStatusFilter[agent.id] = 'running'"
-                          >
-                            <div class="flex items-center gap-2">
-                              <Check
-                                v-if="agentStatusFilter[agent.id] === 'running'"
-                                class="w-4 h-4 text-success"
-                              />
-                              <span>Running</span>
-                            </div>
-                          </button>
-                        </li>
-                        <li>
-                          <button
-                            type="button"
-                            @click="agentStatusFilter[agent.id] = 'stopped'"
-                          >
-                            <div class="flex items-center gap-2">
-                              <Check
-                                v-if="agentStatusFilter[agent.id] === 'stopped'"
-                                class="w-4 h-4 text-success"
-                              />
-                              <span>Stopped</span>
-                            </div>
-                          </button>
-                        </li>
-                      </ul>
-                    </div>
-                    <button
-                      v-if="agentStatusFilter[agent.id] !== 'all'"
-                      class="btn btn-ghost btn-xs hidden sm:inline-flex"
-                      aria-label="Clear status filter"
-                      @click="agentStatusFilter[agent.id] = 'all'"
-                    >
-                      <X class="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-                <div class="form-control w-full sm:w-auto">
-                  <div class="flex items-center gap-2">
-                    <div class="dropdown dropdown-bottom w-full sm:w-auto">
-                      <label
-                        tabindex="0"
-                        class="btn btn-ghost btn-sm rounded-xl border border-base-300 px-3 w-full sm:w-auto justify-between"
-                      >
-                        <span class="truncate">
-                          Auto-update:
-                          {{ autoUpdateLabel(agentAutoUpdateFilter[agent.id]) }}
-                        </span>
-                        <ChevronDown class="w-4 h-4 opacity-70 flex-shrink-0" />
-                      </label>
-                      <ul
-                        tabindex="0"
-                        class="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-56 border border-base-200 z-[1]"
-                      >
-                        <li>
-                          <button
-                            type="button"
-                            @click="agentAutoUpdateFilter[agent.id] = 'all'"
-                          >
-                            <div class="flex items-center gap-2">
-                              <Check
-                                v-if="agentAutoUpdateFilter[agent.id] === 'all'"
-                                class="w-4 h-4 text-success"
-                              />
-                              <span>All Auto-updates</span>
-                            </div>
-                          </button>
-                        </li>
-                        <li>
-                          <button
-                            type="button"
-                            @click="agentAutoUpdateFilter[agent.id] = 'enabled'"
-                          >
-                            <div class="flex items-center gap-2">
-                              <Check
-                                v-if="
-                                  agentAutoUpdateFilter[agent.id] === 'enabled'
-                                "
-                                class="w-4 h-4 text-success"
-                              />
-                              <span>Enabled</span>
-                            </div>
-                          </button>
-                        </li>
-                        <li>
-                          <button
-                            type="button"
-                            @click="
-                              agentAutoUpdateFilter[agent.id] = 'disabled'
-                            "
-                          >
-                            <div class="flex items-center gap-2">
-                              <Check
-                                v-if="
-                                  agentAutoUpdateFilter[agent.id] === 'disabled'
-                                "
-                                class="w-4 h-4 text-success"
-                              />
-                              <span>Disabled</span>
-                            </div>
-                          </button>
-                        </li>
-                      </ul>
-                    </div>
-                    <button
-                      v-if="agentAutoUpdateFilter[agent.id] !== 'all'"
-                      class="btn btn-ghost btn-xs hidden sm:inline-flex"
-                      aria-label="Clear auto-update filter"
-                      @click="agentAutoUpdateFilter[agent.id] = 'all'"
-                    >
-                      <X class="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <div
-                class="ml-auto text-xs text-base-content/60 w-full sm:w-auto text-right"
-              >
-                Showing
-                {{ agentFilteredContainers(agent).length }} of
-                {{ agent.containers?.length || 0 }} records
-              </div>
-            </div>
-          </div>
-          <div
-            v-if="agentFilteredContainers(agent).length === 0"
-            class="px-4 py-8 text-center text-sm text-base-content/70"
-          >
-            <div class="flex flex-col items-center gap-3">
-              <CircleX class="w-12 h-12 text-error" />
-              <div class="space-y-1">
-                <div class="text-base font-semibold">No Containers Found</div>
-                <div>No containers match the current filters.</div>
-              </div>
-            </div>
-          </div>
-          <div v-else class="overflow-x-auto">
-            <table class="table table-fixed w-full">
-              <thead>
-                <tr>
-                  <th
-                    @click="sortAgentContainers(agent.id, 'state')"
-                    class="cursor-pointer w-12 sm:w-28 lg:w-54 p-2 sm:p-4"
-                  >
-                    <div
-                      class="flex items-center justify-center sm:justify-start gap-2"
-                    >
-                      <span class="hidden sm:inline">Status</span>
-                      <ArrowDownUp class="w-4 h-4 shrink-0" />
-                    </div>
-                  </th>
-
-                  <th
-                    @click="sortAgentContainers(agent.id, 'name')"
-                    class="cursor-pointer"
-                  >
-                    <div class="flex items-center gap-2">
-                      Name <ArrowDownUp class="w-4 h-4 shrink-0" />
-                    </div>
-                  </th>
-
-                  <th
-                    @click="sortAgentContainers(agent.id, 'autoUpdate')"
-                    class="cursor-pointer text-center w-14 sm:w-32 p-1"
-                  >
-                    <div class="flex items-center justify-center gap-1">
-                      <span class="hidden sm:inline">Auto-Update</span>
-                      <ArrowDownUp class="w-4 h-4 shrink-0" />
-                    </div>
-                  </th>
-
-                  <th class="text-right w-[5.5rem] sm:w-36">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="container in agentFilteredContainers(agent)"
-                  :key="container?.id"
-                  class="hover group"
-                >
-                  <td class="p-2 sm:p-4">
-                    <div
-                      class="flex items-center justify-center sm:justify-start gap-2"
-                    >
-                      <RefreshCw
-                        v-if="
-                          agentInstalling[
-                            agentActionKey(agent.id, container?.id)
-                          ] ||
-                          agentCheckingUpdate[
-                            agentActionKey(agent.id, container?.id)
-                          ]
-                        "
-                        class="w-5 h-5 text-primary animate-spin shrink-0"
-                        title="Updating"
-                      />
-                      <AlertCircle
-                        v-else-if="
-                          agentOnline(agent) && container?.updateAvailable
-                        "
-                        class="w-5 h-5 text-warning shrink-0"
-                        title="Update Available"
-                      />
-                      <span
-                        v-else
-                        class="h-3 w-3 rounded-full shrink-0"
-                        :class="{
-                          'bg-success':
-                            agentContainerState(agent, container) === 'running',
-                          'bg-error':
-                            agentContainerState(agent, container) !== 'running',
-                        }"
-                      ></span>
-
-                      <span class="font-medium hidden sm:block truncate">
-                        {{ agentContainerStatusText(agent, container) }}
-                      </span>
-                    </div>
-                  </td>
-
-                  <td class="max-w-0 align-middle">
-                    <div class="flex flex-col justify-center">
-                      <div
-                        class="font-mono font-bold truncate text-sm sm:text-base"
-                        :title="container?.name || container?.id"
-                      >
-                        {{ container?.name || container?.id }}
-                      </div>
-                      <div
-                        class="font-mono text-xs text-base-content/50 truncate"
-                        :title="container?.image"
-                      >
-                        {{ container?.image }}
-                      </div>
-                    </div>
-                  </td>
-
-                  <td class="text-center p-1">
-                    <label
-                      class="toggle text-base-content scale-75 sm:scale-100 origin-center"
-                      :class="{
-                        'opacity-50 pointer-events-none': !agentOnline(agent),
-                      }"
-                    >
-                      <input
-                        type="checkbox"
-                        :checked="container?.autoUpdate"
-                        :disabled="
-                          agentAutoUpdating[
-                            agentActionKey(agent.id, container?.id)
-                          ] || !agentOnline(agent)
-                        "
-                        @click="
-                          toggleAgentAutoUpdate(
-                            agent,
-                            container as AgentContainer
-                          )
-                        "
-                      />
-                      <svg
-                        aria-label="disabled"
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="4"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      >
-                        <path d="M18 6 6 18" />
-                        <path d="m6 6 12 12" />
-                      </svg>
-                      <svg
-                        aria-label="enabled"
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 24 24"
-                      >
-                        <g
-                          stroke-linejoin="round"
-                          stroke-linecap="round"
-                          stroke-width="4"
-                          fill="none"
-                          stroke="currentColor"
-                        >
-                          <path d="M20 6 9 17l-5-5"></path>
-                        </g>
-                      </svg>
-                    </label>
-                  </td>
-
-                  <td class="text-right p-2 sm:p-4">
-                    <div class="flex justify-end items-center gap-1 relative">
-                      <button
-                        v-if="
-                          agentOnline(agent) &&
-                          (container?.updateAvailable ||
-                            agentInstalling[
-                              agentActionKey(agent.id, container?.id)
-                            ])
-                        "
-                        class="btn btn-sm btn-info px-2 sm:px-3"
-                        @click="
-                          installAgentContainer(
-                            agent,
-                            container as AgentContainer
-                          )
-                        "
-                        :disabled="
-                          agentInstalling[
-                            agentActionKey(agent.id, container?.id)
-                          ] || !agentOnline(agent)
-                        "
-                        title="Install Update"
-                      >
-                        <Download
-                          v-if="
-                            !agentInstalling[
-                              agentActionKey(agent.id, container?.id)
-                            ]
-                          "
-                          class="w-4 h-4"
-                        />
-                        <RefreshCw v-else class="w-4 h-4 animate-spin" />
-                        <span class="hidden sm:inline ml-1">Install</span>
-                      </button>
-                      <div class="relative" style="z-index: 60">
-                        <button
-                          class="btn btn-ghost btn-sm btn-square"
-                          aria-label="Quick actions"
-                          @click="(e) => openAgentQuickAction(agent, container as AgentContainer, e)"
-                        >
-                          <MoreVertical class="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
+    <AgentContainersList
+      v-else
+      :agents="agentsWithContainers"
+      :format-time="formatTime"
+      :agent-collapsed="agentCollapsed"
+      :agent-filter-text="agentFilterText"
+      :agent-status-filter="agentStatusFilter"
+      :agent-auto-update-filter="agentAutoUpdateFilter"
+      :agent-sort-by="agentSortBy"
+      :agent-sort-order="agentSortOrder"
+      :agent-filtered-containers="agentFilteredContainers"
+      :sort-agent-containers="sortAgentContainers"
+      :agent-online="agentOnline"
+      :agent-container-state="agentContainerState"
+      :agent-container-status-text="agentContainerStatusText"
+      :agent-installing="agentInstalling"
+      :agent-checking-update="agentCheckingUpdate"
+      :agent-auto-updating="agentAutoUpdating"
+      :agent-action-key="agentActionKey"
+      :open-ports-modal="openPortsModal"
+      :toggle-agent-collapse="toggleAgentCollapse"
+      :status-label="statusLabel"
+      :auto-update-label="autoUpdateLabel"
+      :install-agent-container="handleAgentInstall"
+      :toggle-agent-auto-update="handleAgentToggleAuto"
+      :open-agent-quick-action="handleAgentOpenQuick"
+    />
   </div>
 
   <Teleport to="body">
@@ -2054,79 +1249,12 @@ const sortAgentContainers = (agentId: string, key: keyof AgentContainer) => {
   </Teleport>
 
   <!-- Port Mapping Modal (Updated) -->
-  <Teleport to="body">
-    <dialog v-if="portsModalHost" class="modal modal-open">
-      <div class="modal-box max-w-4xl">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="font-bold text-lg flex items-center gap-2">
-            <Network class="w-5 h-5" /> Port Mapping: {{ portsModalHost }}
-          </h3>
-          <button class="btn btn-sm btn-circle btn-ghost" @click="portsModalHost = null">
-            <X class="w-4 h-4" />
-          </button>
-        </div>
-        
-        <div class="mb-4">
-          <div class="form-control w-full">
-            <div class="relative">
-              <input
-                type="text"
-                placeholder="Filter by container name or port..."
-                class="input input-bordered w-full pr-10 rounded-xl"
-                v-model="portsFilter"
-              />
-              <button
-                v-if="portsFilter"
-                class="btn btn-ghost btn-xs absolute right-2 top-1/2 -translate-y-1/2"
-                @click="portsFilter = ''"
-              >
-                <X class="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div class="overflow-x-auto max-h-[60vh]">
-          <table class="table table-zebra w-full">
-            <thead>
-              <tr>
-                <th>Container</th>
-                <th>Ports</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(item, idx) in currentPorts" :key="idx">
-                <td class="font-mono text-sm">
-                  <div v-html="highlightMatch(item.container, portsFilter)"></div>
-                </td>
-                <td>
-                  <div class="flex flex-wrap gap-1">
-                    <span
-                      v-for="p in item.ports"
-                      :key="p"
-                      class="badge badge-outline font-mono text-xs"
-                      v-html="highlightMatch(p, portsFilter)"
-                    ></span>
-                  </div>
-                </td>
-              </tr>
-              <tr v-if="currentPorts.length === 0">
-                <td colspan="2" class="text-center py-8 text-base-content/60">
-                  {{ portsFilter ? 'No matching ports found.' : 'No ports exposed.' }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="modal-action">
-          <button class="btn" @click="portsModalHost = null">Close</button>
-        </div>
-      </div>
-      <form method="dialog" class="modal-backdrop" @click="portsModalHost = null">
-        <button aria-label="close"></button>
-      </form>
-    </dialog>
-  </Teleport>
+  <PortsModal
+    :host="portsModalHost"
+    :items="currentPorts"
+    v-model:filter="portsFilter"
+    @close="portsModalHost = null"
+  />
 
   <dialog v-if="logsModalOpen" class="modal modal-open">
     <div class="modal-box max-w-3xl">

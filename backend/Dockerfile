@@ -5,6 +5,8 @@ WORKDIR /app
 
 # Copy go mod and sum files
 COPY go.mod go.sum ./
+# Verify module files before download
+RUN sha256sum go.sum
 RUN go mod download
 
 # Copy source code

@@ -229,12 +229,16 @@ func (s *Server) updateLocalAutoUpdateContainers(ctx context.Context, stats *Upd
 			if stats != nil {
 				stats.LocalFailed++
 			}
+			status := "error"
+			if ue := new(UpdateError); errors.As(err, &ue) && ue.RolledBack {
+				status = "warning"
+			}
 			s.recordUpdateHistory(UpdateHistory{
 				ContainerID:   cfg.ID,
 				ContainerName: cfg.Name,
 				Image:         cfg.Image,
 				Source:        "local",
-				Status:        "error",
+				Status:        status,
 				Message:       fmt.Sprintf("Auto-update failed: %v", err),
 			})
 		} else {
@@ -247,7 +251,7 @@ func (s *Server) updateLocalAutoUpdateContainers(ctx context.Context, stats *Upd
 			// updateContainerNoStream recorded success history internally.
 			// My new ContainerService.UpdateContainer DOES record DB changes but DOES NOT record history (I added DB sync but left history to caller).
 			// So I need to record success history here.
-			
+
 			s.recordUpdateHistory(UpdateHistory{
 				ContainerID:   cfg.ID,
 				ContainerName: name,
@@ -313,7 +317,7 @@ func (s *Server) enqueueAgentAutoUpdates(ctx context.Context, stats *UpdateCycle
 			if !cont.AutoUpdate || strings.TrimSpace(cont.ID) == "" {
 				continue
 			}
-			
+
 			if stats != nil {
 				stats.AgentChecked++
 			}

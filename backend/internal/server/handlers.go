@@ -23,6 +23,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"updockly/backend/internal/config"
+	"updockly/backend/internal/logging"
 )
 
 type testDbPayload struct {
@@ -34,14 +35,14 @@ func (s *Server) setupTestDbHandler(c *gin.Context) {
 		var count int64
 		s.db.Model(&Account{}).Count(&count)
 		if count > 0 {
-			c.JSON(http.StatusForbidden, gin.H{"error": "setup already completed"})
+			respondError(c, http.StatusForbidden, "setup already completed", nil)
 			return
 		}
 	}
 
 	var payload testDbPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+		respondError(c, http.StatusBadRequest, "invalid payload", wrapErr("bind setup test db payload", err))
 		return
 	}
 
@@ -54,24 +55,24 @@ func (s *Server) setupTestDbHandler(c *gin.Context) {
 		dsn := strings.TrimPrefix(payload.DatabaseURL, "sqlite://")
 		dial = sqlite.Open(dsn)
 	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid database URL scheme"})
+		respondError(c, http.StatusBadRequest, "invalid database URL scheme", nil)
 		return
 	}
 
 	db, err := gorm.Open(dial, &gorm.Config{Logger: logger.Discard})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to open database: %v", err)})
+		respondInternal(c, "failed to open database", wrapErr("gorm open test db", err))
 		return
 	}
 
 	sqlDB, err := db.DB()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to get sql.DB: %v", err)})
+		respondInternal(c, "failed to get sql.DB", wrapErr("retrieve sqlDB", err))
 		return
 	}
 
 	if err := sqlDB.Ping(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to ping database: %v", err)})
+		respondInternal(c, "failed to ping database", wrapErr("ping db", err))
 		return
 	}
 
@@ -86,20 +87,33 @@ type loginRequest struct {
 func (s *Server) loginHandler(c *gin.Context) {
 	var req loginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+		respondError(c, http.StatusBadRequest, "invalid payload", wrapErr("bind login payload", err))
+		return
+	}
+
+	key := s.loginKey(req.Username, c.ClientIP())
+	if retryAfter, blocked := s.isLoginBlocked(key); blocked {
+		logging.FromContext(c).Warn("login blocked", "key", key, "retry_after", retryAfter.String())
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"error":      "too many failed attempts, try again later",
+			"retryAfter": retryAfter.String(),
+		})
 		return
 	}
 
 	account, err := s.authService.Authenticate(req.Username, req.Password)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
+		s.recordLoginFailure(key)
+		respondError(c, http.StatusUnauthorized, "invalid credentials", wrapErr("authenticate user", err))
 		return
 	}
+
+	s.clearLoginFailures(key)
 
 	if account.TwoFactorEnabled {
 		tempToken, err := s.authService.IssueToken(*account, "pre-2fa", 5*time.Minute)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "unable to issue temporary token"})
+			respondInternal(c, "unable to issue temporary token", wrapErr("issue pre-2fa token", err))
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{
@@ -109,14 +123,11 @@ func (s *Server) loginHandler(c *gin.Context) {
 		return
 	}
 
-	token, err := s.authService.IssueToken(*account, "", 24*time.Hour)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "unable to issue token"})
+	if err := s.issueSession(c, account); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "unable to issue session"})
 		return
 	}
-
 	c.JSON(http.StatusOK, gin.H{
-		"token": token,
 		"user": gin.H{
 			"username":         account.Username,
 			"name":             account.Name,
@@ -162,12 +173,12 @@ func (s *Server) updateProfileHandler(c *gin.Context) {
 
 	var payload updateProfilePayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+		respondError(c, http.StatusBadRequest, "invalid payload", wrapErr("bind update profile", err))
 		return
 	}
 
 	if payload.NewPassword != "" && payload.CurrentPassword == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "current password required to change password"})
+		respondError(c, http.StatusBadRequest, "current password required to change password", nil)
 		return
 	}
 
@@ -177,7 +188,7 @@ func (s *Server) updateProfileHandler(c *gin.Context) {
 		if err.Error() == "invalid current password" || strings.Contains(err.Error(), "current password required") {
 			status = http.StatusBadRequest
 		}
-		c.JSON(status, gin.H{"error": err.Error()})
+		respondError(c, status, err.Error(), wrapErr("update account", err))
 		return
 	}
 
@@ -290,7 +301,7 @@ type reset2FAInitPayload struct {
 func (s *Server) reset2FAInitHandler(c *gin.Context) {
 	var payload reset2FAInitPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+		respondError(c, http.StatusBadRequest, "invalid payload", wrapErr("bind reset 2fa init", err))
 		return
 	}
 
@@ -302,7 +313,7 @@ func (s *Server) reset2FAInitHandler(c *gin.Context) {
 		} else if err.Error() == "2fa not enabled" {
 			status = http.StatusBadRequest
 		}
-		c.JSON(status, gin.H{"error": err.Error()})
+		respondError(c, status, err.Error(), wrapErr("initiate reset 2fa", err))
 		return
 	}
 
@@ -321,7 +332,7 @@ type reset2FAFinalizePayload struct {
 func (s *Server) reset2FAFinalizeHandler(c *gin.Context) {
 	var payload reset2FAFinalizePayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+		respondError(c, http.StatusBadRequest, "invalid payload", wrapErr("bind reset 2fa finalize", err))
 		return
 	}
 
@@ -459,14 +470,12 @@ func (s *Server) verify2FAHandler(c *gin.Context) {
 		return
 	}
 
-	token, err := s.authService.IssueToken(*account, "", 24*time.Hour)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "unable to issue token"})
+	if err := s.issueSession(c, account); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "unable to issue session"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"token": token,
 		"user": gin.H{
 			"username":         account.Username,
 			"name":             account.Name,
@@ -560,20 +569,47 @@ type resetPasswordWithTokenPayload struct {
 	NewPassword string `json:"newPassword"`
 }
 
+func (s *Server) refreshHandler(c *gin.Context) {
+	refreshCookie, err := c.Cookie("refresh_token")
+	if err != nil || strings.TrimSpace(refreshCookie) == "" {
+		respondError(c, http.StatusUnauthorized, "missing refresh token", wrapErr("read refresh cookie", err))
+		return
+	}
+	account, err := s.authService.ValidateRefreshToken(refreshCookie)
+	if err != nil {
+		respondError(c, http.StatusUnauthorized, "invalid refresh token", wrapErr("validate refresh token", err))
+		return
+	}
+	if err := s.issueSession(c, account); err != nil {
+		respondInternal(c, "unable to issue session", wrapErr("issue session during refresh", err))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "refreshed"})
+}
+
+func (s *Server) logoutHandler(c *gin.Context) {
+	claims := getClaims(c)
+	if claims != nil {
+		_ = s.authService.ClearRefreshToken(claims.Subject)
+	}
+	s.clearAuthCookies(c)
+	c.JSON(http.StatusOK, gin.H{"message": "logged out"})
+}
+
 func (s *Server) resetPasswordWithTokenHandler(c *gin.Context) {
 	var payload resetPasswordWithTokenPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+		respondError(c, http.StatusBadRequest, "invalid payload", wrapErr("bind reset-password-token payload", err))
 		return
 	}
 
 	if payload.Token == "" || payload.NewPassword == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "token and new password are required"})
+		respondError(c, http.StatusBadRequest, "token and new password are required", nil)
 		return
 	}
 
 	if err := s.authService.ResetPasswordWithToken(payload.Token, payload.NewPassword); err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		respondError(c, http.StatusUnauthorized, "invalid or expired token", wrapErr("reset password with token", err))
 		return
 	}
 
@@ -615,42 +651,42 @@ func (s *Server) setupRuntimeSettingsHandler(c *gin.Context) {
 
 func (s *Server) setupGenerateHandler(c *gin.Context) {
 	if s.db == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "database connection not established"})
+		respondInternal(c, "database connection not established", wrapErr("setup generate missing db", nil))
 		return
 	}
 
 	exists, err := s.authService.AccountExists()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check setup status"})
+		respondInternal(c, "failed to check setup status", wrapErr("setup generate account exists", err))
 		return
 	}
 	if exists {
-		c.JSON(http.StatusForbidden, gin.H{"error": "setup already completed"})
+		respondError(c, http.StatusForbidden, "setup already completed", nil)
 		return
 	}
 
 	var payload setupGeneratePayload
-	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+	if err := c.ShouldBindJSON(&payload); err != nil && err != io.EOF {
+		respondError(c, http.StatusBadRequest, "invalid payload", wrapErr("bind setup generate", err))
 		return
 	}
 
 	secret := payload.SecretKey
 	if secret == "" {
-		secret = randomString(32)
+		secret = RandomString(32)
 	}
 
 	settings := config.CurrentRuntimeSettings()
 	settings.SecretKey = secret
 	if err := config.SaveRuntimeSettings(config.EnvFilePath, settings); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternal(c, "failed to persist setup secrets", wrapErr("save runtime settings", err))
 		return
 	}
 	s.applyRuntimeSettings(settings)
 
 	otpSecret, qrCode, err := s.authService.GenerateSetupOTP()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternal(c, "failed to generate setup otp", wrapErr("generate setup otp", err))
 		return
 	}
 
@@ -673,24 +709,24 @@ func (s *Server) setupCreateHandler(c *gin.Context) {
 	if s.db != nil {
 		exists, err := s.authService.AccountExists()
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check setup status"})
+			respondInternal(c, "failed to check setup status", wrapErr("setup create account exists", err))
 			return
 		}
 		if exists {
-			c.JSON(http.StatusForbidden, gin.H{"error": "setup already completed"})
+			respondError(c, http.StatusForbidden, "setup already completed", nil)
 			return
 		}
 	}
 
 	var payload setupCreatePayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+		respondError(c, http.StatusBadRequest, "invalid payload", wrapErr("bind setup create", err))
 		return
 	}
 
 	valid := totp.Validate(payload.TOTPCode, payload.TOTPSecret)
 	if !valid {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid 2fa code"})
+		respondError(c, http.StatusUnauthorized, "invalid 2fa code", nil)
 		return
 	}
 
@@ -742,7 +778,7 @@ func (s *Server) getSettings(c *gin.Context) {
 func (s *Server) updateSettings(c *gin.Context) {
 	var payload config.RuntimeSettings
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+		respondError(c, http.StatusBadRequest, "invalid payload", wrapErr("bind update settings", err))
 		return
 	}
 	if payload.Timezone == "" {
@@ -753,7 +789,7 @@ func (s *Server) updateSettings(c *gin.Context) {
 	}
 
 	if err := config.SaveRuntimeSettings(config.EnvFilePath, payload); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternal(c, "failed to persist settings", wrapErr("save runtime settings", err))
 		return
 	}
 
@@ -768,13 +804,27 @@ func (s *Server) regenerateRecoveryCodesHandler(c *gin.Context) {
 		return
 	}
 
-	codes, err := s.authService.RegenerateRecoveryCodes(claims.Subject)
+	var payload struct {
+		Password string `json:"password"`
+	}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		respondError(c, http.StatusBadRequest, "invalid payload", wrapErr("bind regenerate recovery codes", err))
+		return
+	}
+	if payload.Password == "" {
+		respondError(c, http.StatusBadRequest, "password is required", nil)
+		return
+	}
+
+	codes, err := s.authService.RegenerateRecoveryCodes(claims.Subject, payload.Password)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if err.Error() == "2fa not enabled" {
 			status = http.StatusBadRequest
+		} else if err.Error() == "invalid password" {
+			status = http.StatusBadRequest
 		}
-		c.JSON(status, gin.H{"error": err.Error()})
+		respondError(c, status, err.Error(), wrapErr("regenerate recovery codes", err))
 		return
 	}
 
@@ -803,11 +853,22 @@ func (s *Server) ssoLoginHandler(c *gin.Context) {
 		Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
 	}
 
-	state := randomString(16)
-	// In a real app, store state in cookie/session to validate in callback
-	c.SetCookie("oauth_state", state, 3600, "/", "", false, true)
+	state := RandomString(32)
+	signature := s.signState(state)
+	stateValue := fmt.Sprintf("%s.%s", state, signature)
+	c.SetSameSite(http.SameSiteLaxMode)
+	secure := strings.HasPrefix(strings.ToLower(strings.Split(strings.TrimSpace(s.cfg.ClientOrigin), ",")[0]), "https://")
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "oauth_state",
+		Value:    stateValue,
+		Path:     "/",
+		MaxAge:   600,
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+	})
 
-	c.Redirect(http.StatusFound, oauth2Config.AuthCodeURL(state))
+	c.Redirect(http.StatusFound, oauth2Config.AuthCodeURL(stateValue))
 }
 
 func (s *Server) ssoCallbackHandler(c *gin.Context) {
@@ -816,19 +877,20 @@ func (s *Server) ssoCallbackHandler(c *gin.Context) {
 		return
 	}
 
-	state, err := c.Cookie("oauth_state")
+	stateCookie, err := c.Cookie("oauth_state")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "state cookie not found"})
+		respondError(c, http.StatusBadRequest, "state cookie not found", wrapErr("read oauth_state cookie", err))
 		return
 	}
-	if c.Query("state") != state {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "state mismatch"})
+	requestState := c.Query("state")
+	if requestState == "" || !s.verifyState(requestState, stateCookie) {
+		respondError(c, http.StatusBadRequest, "state mismatch", nil)
 		return
 	}
 
 	provider, err := oidc.NewProvider(context.Background(), s.cfg.SSO.IssuerURL)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to get provider: %v", err)})
+		respondInternal(c, "failed to get provider", wrapErr("sso provider", err))
 		return
 	}
 
@@ -842,7 +904,7 @@ func (s *Server) ssoCallbackHandler(c *gin.Context) {
 
 	token, err := oauth2Config.Exchange(context.Background(), c.Query("code"))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to exchange token: %v", err)})
+		respondInternal(c, "failed to exchange token", wrapErr("sso exchange code", err))
 		return
 	}
 
@@ -855,7 +917,7 @@ func (s *Server) ssoCallbackHandler(c *gin.Context) {
 	idTokenVerifier := provider.Verifier(&oidc.Config{ClientID: s.cfg.SSO.ClientID})
 	idToken, err := idTokenVerifier.Verify(context.Background(), rawIDToken)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to verify ID token: %v", err)})
+		respondInternal(c, "failed to verify ID token", wrapErr("verify id token", err))
 		return
 	}
 
@@ -865,7 +927,7 @@ func (s *Server) ssoCallbackHandler(c *gin.Context) {
 		Username string `json:"preferred_username"`
 	}
 	if err := idToken.Claims(&claims); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to parse claims: %v", err)})
+		respondInternal(c, "failed to parse claims", wrapErr("parse sso claims", err))
 		return
 	}
 
@@ -887,17 +949,16 @@ func (s *Server) ssoCallbackHandler(c *gin.Context) {
 		return
 	}
 
-	// Issue internal token
-	jwtToken, err := s.authService.IssueToken(*account, "sso", 24*time.Hour)
-	if err != nil {
+	if err := s.issueSession(c, account); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to issue internal token"})
 		return
 	}
 
-	// Redirect to frontend with token
-	// Assuming frontend is served from same origin or we know the URL
 	clientOrigin := strings.TrimSuffix(s.cfg.ClientOrigin, "/")
-	redirectURL := fmt.Sprintf("%s/auth/callback?token=%s", clientOrigin, jwtToken)
+	if clientOrigin == "" {
+		clientOrigin = "/"
+	}
+	redirectURL := fmt.Sprintf("%s/auth/callback", clientOrigin)
 	c.Redirect(http.StatusFound, redirectURL)
 }
 
@@ -919,9 +980,11 @@ type agentResponse struct {
 	Platform      string              `json:"platform"`
 	LastSeen      *time.Time          `json:"lastSeen,omitempty"`
 	Token         string              `json:"token,omitempty"`
+	TokenExpiry   *time.Time          `json:"tokenExpiry,omitempty"`
 	Containers    []ContainerSnapshot `json:"containers,omitempty"`
 	CPU           float64             `json:"cpu"`
 	Memory        float64             `json:"memory"`
+	TokenBound    bool                `json:"tokenBound"`
 	CreatedAt     time.Time           `json:"createdAt"`
 	UpdatedAt     time.Time           `json:"updatedAt"`
 }
@@ -962,11 +1025,13 @@ func toAgentResponse(agent Agent, includeToken bool) agentResponse {
 		Containers:    decodeContainers(agent),
 		CPU:           agent.CPU,
 		Memory:        agent.Memory,
+		TokenBound:    agent.TokenBinding != "",
 		CreatedAt:     agent.CreatedAt,
 		UpdatedAt:     agent.UpdatedAt,
 	}
 	if includeToken {
 		resp.Token = agent.Token
+		resp.TokenExpiry = agent.TokenExpiresAt
 	}
 	return resp
 }
@@ -1152,6 +1217,12 @@ func (s *Server) agentContainerLogsHandler(c *gin.Context) {
 
 	deadline := time.Now().Add(8 * time.Second)
 	for time.Now().Before(deadline) {
+		select {
+		case <-c.Request.Context().Done():
+			c.JSON(http.StatusRequestTimeout, gin.H{"message": "logs request cancelled"})
+			return
+		default:
+		}
 		if logStr, _ := s.latestAgentLogs(agentID, containerID); logStr != "" {
 			c.JSON(http.StatusOK, gin.H{"logs": logStr})
 			return
@@ -1226,11 +1297,14 @@ func (s *Server) agentHeartbeatHandler(c *gin.Context) {
 		return
 	}
 
-	var agent Agent
-	silentDB := s.db.Session(&gorm.Session{Logger: logger.Discard})
-	if err := silentDB.Where("token = ?", token).First(&agent).Error; err != nil {
+	agent, err := s.agentService.GetByToken(token, c.ClientIP())
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid agent token"})
+			return
+		}
+		if strings.Contains(strings.ToLower(err.Error()), "agent token") {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load agent"})
@@ -1240,6 +1314,7 @@ func (s *Server) agentHeartbeatHandler(c *gin.Context) {
 	now := time.Now()
 	agent.LastSeen = &now
 	s.clearAgentOfflineNotified(agent.ID)
+	silentDB := s.db.Session(&gorm.Session{Logger: logger.Discard})
 	updates := map[string]interface{}{
 		"last_seen": now,
 		"cpu":       payload.CPU,
@@ -1263,7 +1338,7 @@ func (s *Server) agentHeartbeatHandler(c *gin.Context) {
 	}
 	if payload.Containers != nil {
 		// Preserve per-container flags (like updateAvailable) across heartbeats
-		existing := decodeContainers(agent)
+		existing := decodeContainers(*agent)
 		existingByID := make(map[string]ContainerSnapshot, len(existing))
 		for _, c := range existing {
 			existingByID[c.ID] = c
@@ -1291,7 +1366,7 @@ func (s *Server) agentHeartbeatHandler(c *gin.Context) {
 		updates["containers"] = agent.Containers
 	}
 
-	if err := silentDB.Model(&agent).Updates(updates).Error; err != nil {
+	if err := silentDB.Model(agent).Updates(updates).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update agent"})
 		return
 	}
@@ -1313,7 +1388,7 @@ func (s *Server) getAgentByToken(c *gin.Context) (*Agent, bool) {
 		return nil, true
 	}
 
-	agent, err := s.agentService.GetByToken(token)
+	agent, err := s.agentService.GetByToken(token, c.ClientIP())
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid agent token"})
@@ -1500,7 +1575,9 @@ func (s *Server) agentCommandReportHandler(c *gin.Context) {
 		}
 	}
 
-	if err := s.agentService.UpdateCommand(cmd); err != nil {
+	updateCtx, updateCancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer updateCancel()
+	if err := s.agentService.UpdateCommandWithContext(updateCtx, cmd); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update command"})
 		return
 	}

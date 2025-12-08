@@ -46,7 +46,7 @@ func TestVaultStableKey(t *testing.T) {
 
 	msg := "hello"
 	enc, _ := vault1.Encrypt(msg)
-	
+
 	dec, err := vault2.Decrypt(enc)
 	if err != nil {
 		t.Fatalf("decrypt with same key failed: %v", err)

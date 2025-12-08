@@ -12,22 +12,52 @@ import (
 
 // Vault handles encrypting sensitive credentials before storage.
 type Vault struct {
-	key []byte
+	primaryKey   []byte
+	fallbackKeys [][]byte
 }
 
-func NewVault(secret string) *Vault {
-	if secret == "" {
-		secret = "dev-secret-key"
-	}
+func deriveKey(secret string) []byte {
 	digest := sha256.Sum256([]byte(secret))
-	return &Vault{key: digest[:]}
+	return digest[:]
+}
+
+// NewVault accepts a primary key plus optional fallbacks used for decryption/rotation.
+func NewVault(primary string, fallbacks ...string) *Vault {
+	keys := make([][]byte, 0, len(fallbacks)+1)
+	seen := make(map[string]struct{})
+	if primary != "" {
+		keys = append(keys, deriveKey(primary))
+		seen[primary] = struct{}{}
+	}
+	for _, fb := range fallbacks {
+		if fb == "" {
+			continue
+		}
+		if _, ok := seen[fb]; ok {
+			continue
+		}
+		seen[fb] = struct{}{}
+		keys = append(keys, deriveKey(fb))
+	}
+
+	if len(keys) == 0 {
+		keys = append(keys, deriveKey("dev-secret-key"))
+	}
+
+	v := &Vault{
+		primaryKey: keys[0],
+	}
+	if len(keys) > 1 {
+		v.fallbackKeys = keys[1:]
+	}
+	return v
 }
 
 func (v *Vault) Encrypt(value string) (string, error) {
 	if value == "" {
 		return "", nil
 	}
-	block, err := aes.NewCipher(v.key)
+	block, err := aes.NewCipher(v.primaryKey)
 	if err != nil {
 		return "", err
 	}
@@ -43,30 +73,51 @@ func (v *Vault) Encrypt(value string) (string, error) {
 	return base64.StdEncoding.EncodeToString(cipherText), nil
 }
 
-func (v *Vault) Decrypt(value string) (string, error) {
+// DecryptWithInfo attempts decryption using primary then fallback keys, returning whether the primary was used.
+func (v *Vault) DecryptWithInfo(value string) (string, bool, error) {
 	if value == "" {
-		return "", nil
+		return "", true, nil
 	}
 	data, err := base64.StdEncoding.DecodeString(value)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
-	block, err := aes.NewCipher(v.key)
-	if err != nil {
-		return "", err
+
+	tryKey := func(key []byte) (string, bool, error) {
+		block, err := aes.NewCipher(key)
+		if err != nil {
+			return "", false, err
+		}
+		gcm, err := cipher.NewGCM(block)
+		if err != nil {
+			return "", false, err
+		}
+		if len(data) < gcm.NonceSize() {
+			return "", false, errors.New("ciphertext too short")
+		}
+		nonce := data[:gcm.NonceSize()]
+		cipherText := data[gcm.NonceSize():]
+		plain, err := gcm.Open(nil, nonce, cipherText, nil)
+		if err != nil {
+			return "", false, err
+		}
+		return string(plain), true, nil
 	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", err
+
+	if plain, ok, err := tryKey(v.primaryKey); err == nil && ok {
+		return plain, true, nil
 	}
-	if len(data) < gcm.NonceSize() {
-		return "", errors.New("ciphertext too short")
+
+	for _, fb := range v.fallbackKeys {
+		if plain, ok, err := tryKey(fb); err == nil && ok {
+			return plain, false, nil
+		}
 	}
-	nonce := data[:gcm.NonceSize()]
-	cipherText := data[gcm.NonceSize():]
-	plain, err := gcm.Open(nil, nonce, cipherText, nil)
-	if err != nil {
-		return "", err
-	}
-	return string(plain), nil
+
+	return "", false, errors.New("decryption failed with all keys")
+}
+
+func (v *Vault) Decrypt(value string) (string, error) {
+	plain, _, err := v.DecryptWithInfo(value)
+	return plain, err
 }

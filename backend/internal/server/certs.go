@@ -7,9 +7,11 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -42,6 +44,11 @@ func (cm *CertManager) GetCACert() ([]byte, error) {
 }
 
 func (cm *CertManager) generateSelfSigned() error {
+	// Ensure destination directory exists and is private
+	if err := os.MkdirAll(filepath.Dir(cm.CertPath), 0o700); err != nil {
+		return err
+	}
+
 	// 1. Generate CA
 	ca := &x509.Certificate{
 		SerialNumber: big.NewInt(2024),
@@ -80,7 +87,7 @@ func (cm *CertManager) generateSelfSigned() error {
 			Organization: []string{"Updockly Server"},
 			CommonName:   "updockly-server",
 		},
-		IPAddresses:  []net.IP{net.IPv4(127, 0, 0, 1), net.IPv4(0, 0, 0, 0)},
+		IPAddresses:  []net.IP{net.IPv4(127, 0, 0, 1)},
 		DNSNames:     []string{"localhost", "backend", "updockly-backend"},
 		NotBefore:    time.Now(),
 		NotAfter:     time.Now().Add(365 * 24 * time.Hour),
@@ -94,12 +101,18 @@ func (cm *CertManager) generateSelfSigned() error {
 		for _, ipStr := range strings.Split(extraIPs, ",") {
 			if ip := net.ParseIP(strings.TrimSpace(ipStr)); ip != nil {
 				cert.IPAddresses = append(cert.IPAddresses, ip)
+			} else {
+				fmt.Printf("Warning: ignoring invalid SERVER_SAN_IPS entry: %s\n", ipStr)
 			}
 		}
 	}
 	if extraDomains := os.Getenv("SERVER_SAN_DOMAINS"); extraDomains != "" {
 		for _, domain := range strings.Split(extraDomains, ",") {
 			if d := strings.TrimSpace(domain); d != "" {
+				if strings.ContainsAny(d, " *") {
+					fmt.Printf("Warning: ignoring invalid SERVER_SAN_DOMAINS entry: %s\n", d)
+					continue
+				}
 				cert.DNSNames = append(cert.DNSNames, d)
 			}
 		}
@@ -134,7 +147,7 @@ func (cm *CertManager) generateSelfSigned() error {
 	if err := os.WriteFile(cm.CertPath, certPEM.Bytes(), 0644); err != nil {
 		return err
 	}
-	if err := os.WriteFile(cm.KeyPath, certPrivKeyPEM.Bytes(), 0644); err != nil {
+	if err := os.WriteFile(cm.KeyPath, certPrivKeyPEM.Bytes(), 0600); err != nil {
 		return err
 	}
 

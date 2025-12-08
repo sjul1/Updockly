@@ -23,7 +23,7 @@ import (
 // and allow selective overriding.
 type MockDockerClient struct {
 	client.APIClient
-	
+
 	// Mock functions
 	ContainerListFunc       func(ctx context.Context, options container.ListOptions) ([]types.Container, error)
 	ContainerInspectFunc    func(ctx context.Context, containerID string) (types.ContainerJSON, error)
@@ -65,10 +65,10 @@ func (m *MockDockerClient) ImageInspectWithRaw(ctx context.Context, imageID stri
 
 // Implementing the one requested by error message
 func (m *MockDockerClient) ImageInspect(ctx context.Context, imageID string, opts ...client.ImageInspectOption) (image.InspectResponse, error) {
-    if m.ImageInspectFunc != nil {
-        return m.ImageInspectFunc(ctx, imageID)
-    }
-    return image.InspectResponse{}, nil
+	if m.ImageInspectFunc != nil {
+		return m.ImageInspectFunc(ctx, imageID)
+	}
+	return image.InspectResponse{}, nil
 }
 
 func (m *MockDockerClient) DistributionInspect(ctx context.Context, imageRef, encodedRegistryAuth string) (registry.DistributionInspect, error) {
@@ -160,7 +160,7 @@ func setupContainerServiceTest(t *testing.T) (*ContainerService, *MockDockerClie
 	svc.dockerClientFactory = func() (client.APIClient, error) {
 		return mockClient, nil
 	}
-	
+
 	return svc, mockClient, db
 }
 

@@ -4,14 +4,13 @@ import type {
 
 const API_BASE_URL = "/api";
 
-let authToken: string | null = null;
 let offlineMode = false;
 type UnauthorizedCallback = () => void;
 let onUnauthorized: UnauthorizedCallback | null = null;
-
-export const setAuthToken = (token: string | null) => {
-  authToken = token;
-};
+let refreshing: Promise<void> | null = null;
+const MAX_RETRIES = 2;
+const RETRY_DELAYS = [300, 800];
+const RETRYABLE_STATUSES = new Set([502, 503, 504]);
 
 export const setOfflineMode = (offline: boolean) => {
   offlineMode = offline;
@@ -19,6 +18,23 @@ export const setOfflineMode = (offline: boolean) => {
 
 export const setOnUnauthorized = (cb: UnauthorizedCallback) => {
   onUnauthorized = cb;
+};
+
+const refreshSession = async () => {
+  if (!refreshing) {
+    refreshing = (async () => {
+      const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        throw new ApiError("refresh failed", res.status);
+      }
+    })().finally(() => {
+      refreshing = null;
+    });
+  }
+  return refreshing;
 };
 
 export class ApiError extends Error {
@@ -118,6 +134,7 @@ export interface Agent {
   containers?: AgentContainer[];
   cpu?: number;
   memory?: number;
+  tokenBound?: boolean;
 }
 
 export type ApiAgent = Agent;
@@ -165,19 +182,56 @@ async function request<T>(
     ...options.headers,
   } as HeadersInit;
 
-  if (authToken && !publicEndpoint) {
-    (headers as any)["Authorization"] = `Bearer ${authToken}`;
-  }
-
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
 
-  try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+  const makeRequest = async (): Promise<Response> =>
+    fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
       headers,
+      credentials: "include",
       signal: controller.signal,
     });
+
+  const fetchWithRetry = async (): Promise<Response> => {
+    let attempt = 0;
+    let lastError: any;
+    while (attempt <= MAX_RETRIES) {
+      try {
+        const res = await makeRequest();
+        if (RETRYABLE_STATUSES.has(res.status) && attempt < MAX_RETRIES) {
+          lastError = new ApiError(`transient ${res.status}`, res.status);
+          await new Promise((resolve) =>
+            setTimeout(resolve, (RETRY_DELAYS[attempt] || 500) + Math.random() * 100)
+          );
+          attempt++;
+          continue;
+        }
+        return res;
+      } catch (err) {
+        lastError = err;
+        if (attempt === MAX_RETRIES) {
+          throw lastError;
+        }
+        await new Promise((resolve) =>
+          setTimeout(resolve, (RETRY_DELAYS[attempt] || 500) + Math.random() * 100)
+        );
+        attempt++;
+      }
+    }
+    throw lastError;
+  };
+
+  try {
+    let response = await fetchWithRetry();
+    if (!publicEndpoint && endpoint !== "/auth/refresh" && response.status === 401) {
+      try {
+        await refreshSession();
+        response = await fetchWithRetry();
+      } catch {
+        onUnauthorized?.();
+      }
+    }
     clearTimeout(id);
 
     if (response.status === 204) {
@@ -265,9 +319,10 @@ export const api = {
       body: JSON.stringify({ code }),
     }),
 
-  regenerateRecoveryCodes: () =>
+  regenerateRecoveryCodes: (password: string) =>
     request<{ recoveryCodes: string[] }>("/2fa/regenerate", {
       method: "POST",
+      body: JSON.stringify({ password }),
     }),
 
   disable2FA: (code: string, password: string) =>
@@ -306,7 +361,7 @@ export const api = {
       lastSeen: string;
       cpu?: number;
       memory?: number;
-    }>("/containers/host-info"),
+    }>("/containers/host-info", {}, false, 8000),
   checkContainerUpdate: (id: string) =>
     request<{ updateAvailable: boolean }>(`/containers/${id}/check-update`, {
       method: "POST",
@@ -316,12 +371,10 @@ export const api = {
     onMessage: (message: Record<string, any>) => void
   ) => {
     const headers: HeadersInit = { "Content-Type": "application/json" };
-    if (authToken) {
-      (headers as any)["Authorization"] = `Bearer ${authToken}`;
-    }
     const response = await fetch(`${API_BASE_URL}/containers/${id}/update`, {
       method: "POST",
       headers,
+      credentials: "include",
     });
     if (!response.body) {
       onMessage({ error: "No response body received from update endpoint." });
@@ -392,10 +445,9 @@ export const api = {
       databaseUrl?: string;
     }>("/auth/setup/runtime-settings", {}, true, 500),
 
-  setupGenerate: (secretKey?: string) =>
+  setupGenerate: () =>
     request<{ secret: string; qrCode: string }>("/auth/setup/generate", {
       method: "POST",
-      body: JSON.stringify({ secretKey }),
     }),
 
   setupCreate: (payload: unknown) =>
@@ -403,6 +455,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+
+  logout: () => request<{ message: string }>("/auth/logout", { method: "POST" }),
 
   setupTestDb: (databaseUrl: string) =>
     request<unknown>("/auth/setup/test-db", {
@@ -504,10 +558,7 @@ export const api = {
 
   downloadCACert: async () => {
     const headers: HeadersInit = { Accept: "application/x-x509-ca-cert" };
-    if (authToken) {
-      (headers as any)["Authorization"] = `Bearer ${authToken}`;
-    }
-    const res = await fetch(`${API_BASE_URL}/settings/ca-cert`, { headers });
+    const res = await fetch(`${API_BASE_URL}/settings/ca-cert`, { headers, credentials: "include" });
     if (!res.ok) {
       const message = `Failed to download cert (${res.status})`;
       throw new ApiError(message, res.status);

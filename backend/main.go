@@ -22,33 +22,6 @@ func main() {
 		db = nil
 	}
 
-	needsSetup := true
-	if db != nil {
-		var count int64
-		if err := db.Model(&server.Account{}).Count(&count).Error; err == nil && count > 0 {
-			needsSetup = false
-		}
-	}
-
-	if isWeakSecret(cfg.SecretKey) {
-		if needsSetup {
-			if fresh, err := generateStrongSecret(); err == nil {
-				settings := config.CurrentRuntimeSettings()
-				settings.SecretKey = fresh
-				if err := config.SaveRuntimeSettings(config.EnvFilePath, settings); err != nil {
-					log.Printf("warning: generated SECRET_KEY but failed to persist to %s: %v", config.EnvFilePath, err)
-				} else {
-					cfg.SecretKey = fresh
-					log.Println("INFO: generated a strong SECRET_KEY for initial setup and saved it to .env")
-				}
-			} else {
-				log.Printf("warning: SECRET_KEY is weak and auto-generation failed: %v", err)
-			}
-		} else {
-			log.Fatal("Refusing to start with weak/default SECRET_KEY; set a strong SECRET_KEY environment variable.")
-		}
-	}
-
 	srv, err := server.New(cfg, db)
 	if err != nil {
 		log.Fatalf("server bootstrap failed: %v", err)

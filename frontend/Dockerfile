@@ -3,9 +3,9 @@ FROM node:alpine AS builder
 
 WORKDIR /app
 
-# Install dependencies
+# Install dependencies (verify lockfile)
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN sha256sum package-lock.json && npm ci
 
 # Copy source code
 COPY . .

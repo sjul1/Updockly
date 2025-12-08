@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -148,7 +149,38 @@ func (s *Server) updateContainerHandler(c *gin.Context) {
 
 	newID, name, image, digest, err := s.containerService.UpdateContainer(c.Request.Context(), id, send)
 	if err != nil {
-		send(map[string]interface{}{"error": err.Error()})
+		rolledBack := false
+		status := "error"
+		rollbackMsg := ""
+		if ue := new(UpdateError); errors.As(err, &ue) {
+			rolledBack = ue.RolledBack
+			if rolledBack {
+				status = "warning"
+				rollbackMsg = ue.RollbackMessage
+			}
+		}
+		msg := err.Error()
+		s.recordUpdateHistory(UpdateHistory{
+			ContainerID:   id,
+			ContainerName: name,
+			Image:         image,
+			ImageDigest:   digest,
+			Source:        "manual",
+			Status:        status,
+			Message:       msg,
+		})
+		payload := map[string]interface{}{
+			"error":      msg,
+			"rolledBack": rolledBack,
+		}
+		if rolledBack {
+			msgText := rollbackMsg
+			if strings.TrimSpace(msgText) == "" {
+				msgText = "Update failed but the previous container was restored."
+			}
+			payload["rollbackMessage"] = msgText
+		}
+		send(payload)
 		return
 	}
 
@@ -161,7 +193,7 @@ func (s *Server) updateContainerHandler(c *gin.Context) {
 		Status:        "success",
 		Message:       "Update completed",
 	})
-	
+
 	send(map[string]interface{}{
 		"message": fmt.Sprintf("Container %s updated successfully", name),
 		"newId":   newID,

@@ -5,7 +5,7 @@ import (
 	"math/big"
 )
 
-func randomString(length int) string {
+func RandomString(length int) string {
 	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	result := make([]byte, length)
 	for i := range result {

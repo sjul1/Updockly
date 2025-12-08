@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch, withDefaults } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { ApiError, api } from "../services/api";
 import { Lock, Shield, Key, Download, Moon, Sun } from "lucide-vue-next";
 import { useToast } from "vue-toastification";
@@ -13,7 +13,6 @@ const props = withDefaults(
   defineProps<{
     settings: {
       databaseUrl?: string;
-      secretKey?: string;
     };
     theme?: "light" | "dark";
   }>(),
@@ -44,7 +43,6 @@ const adminForm = reactive({
   email: "",
   password: "",
   name: "Platform Admin",
-  secretKey: "",
   totpSecret: "",
   totpCode: "",
 });
@@ -101,7 +99,7 @@ const generate2FA = async () => {
   tfa.loading = true;
   tfa.error = "";
   try {
-    const response = await api.setupGenerate(adminForm.secretKey);
+    const response = await api.setupGenerate();
     tfa.qrCode = response.qrCode;
     tfa.secret = response.secret;
     adminForm.totpSecret = response.secret;
@@ -299,17 +297,6 @@ const toggleTheme = () => emit("toggle-theme");
               type="password"
               class="input input-bordered input-sm rounded-xl bg-base-100/70 focus:outline-none focus:ring-2 focus:ring-primary/40 w-full"
               required
-            />
-          </label>
-          <label class="form-control w-full">
-            <div class="label">
-              <span class="label-text">Secret Key (Optional)</span>
-            </div>
-            <input
-              v-model="adminForm.secretKey"
-              type="password"
-              class="input input-bordered input-sm rounded-xl bg-base-100/70 focus:outline-none focus:ring-2 focus:ring-primary/40 w-full"
-              placeholder="Leave empty to auto-generate"
             />
           </label>
 

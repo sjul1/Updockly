@@ -21,7 +21,7 @@ func setupAgentTestDB(t *testing.T) *gorm.DB {
 
 func TestAgentCRUD(t *testing.T) {
 	db := setupAgentTestDB(t)
-	svc := NewAgentService(db)
+	svc := NewAgentService(db, false)
 
 	// Create
 	agent, err := svc.Create("test-agent", "host1", "notes", true)
@@ -63,7 +63,7 @@ func TestAgentCRUD(t *testing.T) {
 	}
 
 	// GetByToken
-	byToken, err := svc.GetByToken(agent.Token)
+	byToken, err := svc.GetByToken(agent.Token, "")
 	if err != nil {
 		t.Fatalf("GetByToken failed: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestAgentCRUD(t *testing.T) {
 
 func TestAgentCommands(t *testing.T) {
 	db := setupAgentTestDB(t)
-	svc := NewAgentService(db)
+	svc := NewAgentService(db, false)
 
 	agent, _ := svc.Create("agent", "host", "", false)
 
@@ -146,7 +146,7 @@ func TestAgentCommands(t *testing.T) {
 
 func TestToggleContainerAutoUpdate_Agent(t *testing.T) {
 	db := setupAgentTestDB(t)
-	svc := NewAgentService(db)
+	svc := NewAgentService(db, false)
 
 	agent, _ := svc.Create("agent", "host", "", false)
 

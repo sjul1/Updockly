@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,14 +14,22 @@ import (
 
 func TestSendWebhookMessage(t *testing.T) {
 	var receivedBody []byte
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var err error
 		receivedBody, err = io.ReadAll(r.Body)
 		if err != nil {
 			t.Fatal(err)
 		}
 		w.WriteHeader(http.StatusOK)
-	}))
+	})
+	// Force IPv4 listener to avoid environments that disallow IPv6
+	l, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Skipf("unable to open test listener: %v", err)
+	}
+	ts := httptest.NewUnstartedServer(handler)
+	ts.Listener = l
+	ts.Start()
 	defer ts.Close()
 
 	srv := &Server{
@@ -31,7 +40,7 @@ func TestSendWebhookMessage(t *testing.T) {
 		},
 	}
 
-	err := srv.sendWebhookMessage(context.Background(), "Test content")
+	err = srv.sendWebhookMessage(context.Background(), "Test content")
 	if err != nil {
 		t.Fatalf("sendWebhookMessage failed: %v", err)
 	}

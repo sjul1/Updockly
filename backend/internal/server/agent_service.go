@@ -1,32 +1,45 @@
 package server
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"strings"
+	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
 
 type AgentService struct {
-	db *gorm.DB
+	db               *gorm.DB
+	requireIPBinding bool
 }
 
-func NewAgentService(db *gorm.DB) *AgentService {
-	return &AgentService{db: db}
+const agentTokenTTL = 30 * 24 * time.Hour
+
+func NewAgentService(db *gorm.DB, requireIPBinding bool) *AgentService {
+	return &AgentService{db: db, requireIPBinding: requireIPBinding}
 }
 
 func (s *AgentService) Create(name, hostname, notes string, tlsEnabled bool) (*Agent, error) {
-	token := randomString(48)
+	token := RandomString(48)
+	hash := sha256.Sum256([]byte(token))
+	exp := time.Now().Add(agentTokenTTL)
 	agent := &Agent{
-		Name:       name,
-		Hostname:   hostname,
-		Notes:      notes,
-		Token:      token,
-		TLSEnabled: tlsEnabled,
+		Name:           name,
+		Hostname:       hostname,
+		Notes:          notes,
+		TokenHash:      hex.EncodeToString(hash[:]),
+		TokenVersion:   1,
+		TokenExpiresAt: &exp,
+		TLSEnabled:     tlsEnabled,
 	}
 	if err := s.db.Create(agent).Error; err != nil {
 		return nil, err
 	}
+	agent.Token = token // return plain token without persisting it in DB
 	return agent, nil
 }
 
@@ -46,13 +59,45 @@ func (s *AgentService) Get(id string) (*Agent, error) {
 	return &agent, nil
 }
 
-func (s *AgentService) GetByToken(token string) (*Agent, error) {
-	var agent Agent
-	// Silence "record not found" logs for noisy agent polling
-	silentDB := s.db.Session(&gorm.Session{Logger: logger.Discard})
-	if err := silentDB.Where("token = ?", token).First(&agent).Error; err != nil {
-		return nil, err
+func (s *AgentService) GetByToken(token, ip string) (*Agent, error) {
+	if token == "" {
+		return nil, gorm.ErrRecordNotFound
 	}
+	if s.requireIPBinding && strings.TrimSpace(ip) == "" {
+		return nil, errors.New("agent token requires IP binding")
+	}
+	hash := sha256.Sum256([]byte(token))
+	hashHex := hex.EncodeToString(hash[:])
+	var agent Agent
+	silentDB := s.db.Session(&gorm.Session{Logger: logger.Discard})
+
+	err := silentDB.Where("token_hash = ?", hashHex).First(&agent).Error
+	if err != nil {
+		// Legacy fallback to plain token
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			if err := silentDB.Where("token = ?", token).First(&agent).Error; err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, err
+		}
+	}
+
+	// Expiry check
+	if agent.TokenExpiresAt != nil && time.Now().After(*agent.TokenExpiresAt) {
+		return nil, errors.New("agent token expired")
+	}
+
+	// Optional IP binding: if stored, require match. If empty, bind on first successful auth.
+	if agent.TokenBinding != "" && ip != "" {
+		if agent.TokenBinding != ip {
+			return nil, errors.New("agent token not valid for this IP")
+		}
+	} else if ip != "" && agent.TokenBinding == "" {
+		_ = silentDB.Model(&Agent{}).Where("id = ?", agent.ID).Update("token_binding", ip)
+		agent.TokenBinding = ip
+	}
+
 	return &agent, nil
 }
 
@@ -80,10 +125,16 @@ func (s *AgentService) RotateToken(id string) (*Agent, error) {
 	if err != nil {
 		return nil, err
 	}
-	agent.Token = randomString(48)
+	token := RandomString(48)
+	hash := sha256.Sum256([]byte(token))
+	exp := time.Now().Add(agentTokenTTL)
+	agent.TokenHash = hex.EncodeToString(hash[:])
+	agent.TokenVersion++
+	agent.TokenExpiresAt = &exp
 	if err := s.db.Save(agent).Error; err != nil {
 		return nil, err
 	}
+	agent.Token = token // return plain token without persisting it
 	return agent, nil
 }
 
@@ -121,6 +172,10 @@ func (s *AgentService) GetNextCommand(agentID string) (*AgentCommand, error) {
 
 func (s *AgentService) UpdateCommand(cmd *AgentCommand) error {
 	return s.db.Save(cmd).Error
+}
+
+func (s *AgentService) UpdateCommandWithContext(ctx context.Context, cmd *AgentCommand) error {
+	return s.db.WithContext(ctx).Save(cmd).Error
 }
 
 func (s *AgentService) GetCommand(id, agentID string) (*AgentCommand, error) {

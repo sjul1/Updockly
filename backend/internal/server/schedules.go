@@ -74,5 +74,3 @@ func (s *Server) updateScheduleHandler(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, schedule)
 }
-
-

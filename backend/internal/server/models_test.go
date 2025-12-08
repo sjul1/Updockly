@@ -167,7 +167,7 @@ func TestContainerSnapshotList_ValueScan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Value() failed: %v", err)
 	}
-	
+
 	strVal, ok := val.(string)
 	if !ok {
 		t.Fatalf("Value() returned non-string: %T", val)

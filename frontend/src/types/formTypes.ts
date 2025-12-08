@@ -87,7 +87,6 @@ export interface SSOSettingsState {
 export interface SettingsFormState {
   databaseUrl: string;
   clientOrigin: string;
-  secretKey: string;
   timezone: string;
   autoPruneImages: boolean;
   hideSupportButton: boolean;

@@ -6,11 +6,26 @@ import (
 	"fmt"
 	"net/mail"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
 
-var EnvFilePath = ".env"
+var EnvFilePath = resolveEnvFilePath()
+
+func resolveEnvFilePath() string {
+	candidates := []string{
+		"backend/.env", // when running from repo root
+		".env",         // when running from backend directory
+	}
+	for _, p := range candidates {
+		if info, err := os.Stat(p); err == nil && !info.IsDir() {
+			return p
+		}
+	}
+	// Fallback to backend/.env to avoid dropping files in unexpected CWD
+	return filepath.Join("backend", ".env")
+}
 
 type NotificationSettings struct {
 	WebhookURL       string       `json:"webhookUrl"`
@@ -46,6 +61,7 @@ type RuntimeSettings struct {
 	DatabaseURL   string               `json:"databaseUrl"`
 	ClientOrigin  string               `json:"clientOrigin"`
 	SecretKey     string               `json:"secretKey"`
+	HideSupport   bool                 `json:"hideSupportButton"`
 	Timezone      string               `json:"timezone"`
 	AutoPrune     bool                 `json:"autoPruneImages"`
 	Notifications NotificationSettings `json:"notifications"`
@@ -114,16 +130,17 @@ func CurrentRuntimeSettings() RuntimeSettings {
 		return strings.TrimSpace(strings.ReplaceAll(val, "\\\"", "\""))
 	}
 	return RuntimeSettings{
-		DatabaseURL:  getEnvWithFile("DATABASE_URL"),
+		DatabaseURL: getEnvWithFile("DATABASE_URL"),
 		ClientOrigin: func() string {
 			if co := getEnvWithFile("CLIENT_ORIGIN"); co != "" {
 				return co
 			}
 			return "http://localhost:8080"
 		}(),
-		SecretKey:    getEnvWithFile("SECRET_KEY"),
-		Timezone:     getEnvWithFile("TIMEZONE"),
-		AutoPrune:    boolFromEnv("AUTO_PRUNE_IMAGES"),
+		SecretKey:   getEnvWithFile("SECRET_KEY"),
+		HideSupport: boolFromEnv("HIDE_SUPPORT_BUTTON"),
+		Timezone:    getEnvWithFile("TIMEZONE"),
+		AutoPrune:   boolFromEnv("AUTO_PRUNE_IMAGES"),
 		Notifications: NotificationSettings{
 			WebhookURL:       getEnvWithFile("NOTIFICATION_WEBHOOK_URL"),
 			DiscordToken:     getEnvWithFile("NOTIFICATION_DISCORD_TOKEN"),
@@ -176,8 +193,18 @@ func SaveRuntimeSettings(path string, settings RuntimeSettings) error {
 
 	write("DATABASE_URL", settings.DatabaseURL)
 	write("CLIENT_ORIGIN", settings.ClientOrigin)
-	write("SECRET_KEY", settings.SecretKey)
+	// SECRET_KEY is legacy; only persist if provided and no dedicated secrets exist.
+	secretKeyValue := strings.TrimSpace(settings.SecretKey)
+	hasJWT := existing["JWT_SECRET"] != "" || os.Getenv("JWT_SECRET") != ""
+	hasVault := existing["VAULT_KEY"] != "" || os.Getenv("VAULT_KEY") != ""
+	if secretKeyValue != "" && !hasJWT && !hasVault {
+		write("SECRET_KEY", secretKeyValue)
+	} else {
+		// Remove legacy secret when dedicated keys are present or not provided.
+		delete(existing, "SECRET_KEY")
+	}
 	write("TIMEZONE", settings.Timezone)
+	write("HIDE_SUPPORT_BUTTON", strconv.FormatBool(settings.HideSupport))
 	write("AUTO_PRUNE_IMAGES", strconv.FormatBool(settings.AutoPrune))
 	write("NOTIFICATION_WEBHOOK_URL", settings.Notifications.WebhookURL)
 	write("NOTIFICATION_DISCORD_TOKEN", settings.Notifications.DiscordToken)
@@ -210,7 +237,10 @@ func SaveRuntimeSettings(path string, settings RuntimeSettings) error {
 		"DATABASE_URL":                 {},
 		"CLIENT_ORIGIN":                {},
 		"SECRET_KEY":                   {},
+		"JWT_SECRET":                   {},
+		"VAULT_KEY":                    {},
 		"TIMEZONE":                     {},
+		"HIDE_SUPPORT_BUTTON":          {},
 		"SERVER_ADDR":                  {},
 		"AUTO_PRUNE_IMAGES":            {},
 		"NOTIFICATION_WEBHOOK_URL":     {},
@@ -241,7 +271,14 @@ func SaveRuntimeSettings(path string, settings RuntimeSettings) error {
 		write(k, v)
 	}
 
-	if err := os.WriteFile(path, buf.Bytes(), 0o600); err != nil {
+	newContent := buf.Bytes()
+	if current, err := os.ReadFile(path); err == nil {
+		if bytes.Equal(bytes.TrimSpace(current), bytes.TrimSpace(newContent)) {
+			return nil
+		}
+	}
+
+	if err := os.WriteFile(path, newContent, 0o600); err != nil {
 		return err
 	}
 

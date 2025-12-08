@@ -18,11 +18,18 @@ import {
   watch,
   inject,
   type ComputedRef,
+  type Ref,
 } from "vue";
 import type { SettingsFormState } from "../types/formTypes";
 import { api, type ApiUser } from "../services/api";
 
-type SectionKey = "runtime" | "notifications" | "2fa" | "sso" | "smtp" | "account";
+type SectionKey =
+  | "runtime"
+  | "notifications"
+  | "2fa"
+  | "sso"
+  | "smtp"
+  | "account";
 
 const props = defineProps<{
   form: SettingsFormState;
@@ -40,7 +47,15 @@ const emit = defineEmits<{
   (e: "test-notification"): void;
   (e: "test-email"): void;
   (e: "refreshUser"): void;
-  (e: "update-user", payload: { name: string; email: string; currentPassword?: string; newPassword?: string }): void;
+  (
+    e: "update-user",
+    payload: {
+      name: string;
+      email: string;
+      currentPassword?: string;
+      newPassword?: string;
+    }
+  ): void;
 }>();
 
 const appTimezone = inject<ComputedRef<string>>(
@@ -111,28 +126,8 @@ const confirmRegeneration = async () => {
   if (!twoFactor.password) return;
   twoFactor.loading = true;
   twoFactor.error = "";
-  // We actually need a new endpoint that accepts password for verification before regenerating
-  // For now, let's assume we verify password client-side by just asking for it,
-  // BUT actually the backend endpoint doesn't require password currently.
-  // To do this properly we need to update backend handler too.
-  // However, the user asked to "add password challenge input".
-  // If we want to enforce it, we should use the disable2FA pattern: verify creds then action.
-  // Since the backend handler `regenerateRecoveryCodesHandler` doesn't take a password,
-  // we will just simulate the "challenge" UI for now, or better yet, we should update the backend.
-
-  // Let's just update the UI flow first as requested.
   try {
-    // Ideally we would pass password here. Since the current API doesn't support it,
-    // we can't enforce it securely without backend changes.
-    // But typically 'regenerate' implies you are already logged in.
-    // If the user insists on password challenge, we should probably verify it against /auth/login
-    // or similar if we don't want to change backend structure too much,
-    // OR just add the UI step as a friction point.
-
-    // Let's assume for this step we just add the UI friction as a safety check.
-    // Real security would require backend validation of that password.
-
-    const response = await api.regenerateRecoveryCodes();
+    const response = await api.regenerateRecoveryCodes(twoFactor.password);
     twoFactor.recoveryCodes = response.recoveryCodes;
     confirmRegenerate.value = false;
     twoFactor.password = "";
@@ -183,6 +178,52 @@ const sectionVisibility = reactive<Record<SectionKey, boolean>>({
   smtp: false,
   account: false,
 });
+
+const appTheme = inject<Ref<string>>("appTheme", ref("light"));
+const setAppTheme = inject<(theme: string) => void>(
+  "setAppTheme",
+  (value: string) => {
+    localStorage.setItem("updockly_theme", value);
+    document.documentElement.setAttribute("data-theme", value);
+  }
+);
+const availableThemes = [
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
+  { value: "cupcake", label: "Cupcake" },
+  { value: "bumblebee", label: "Bumblebee" },
+  { value: "emerald", label: "Emerald" },
+  { value: "corporate", label: "Corporate" },
+  { value: "synthwave", label: "Synthwave" },
+  { value: "retro", label: "Retro" },
+  { value: "cyberpunk", label: "Cyberpunk" },
+  { value: "valentine", label: "Valentine" },
+  { value: "halloween", label: "Halloween" },
+  { value: "garden", label: "Garden" },
+  { value: "forest", label: "Forest" },
+  { value: "aqua", label: "Aqua" },
+  { value: "lofi", label: "Lofi" },
+  { value: "pastel", label: "Pastel" },
+  { value: "business", label: "Business" },
+  { value: "dracula", label: "Dracula" },
+];
+const selectedTheme = ref<string>(appTheme?.value || "light");
+watch(
+  () => appTheme?.value,
+  (value) => {
+    if (value) {
+      selectedTheme.value = value;
+    }
+  },
+  { immediate: true }
+);
+watch(selectedTheme, (value) => {
+  setAppTheme?.(value);
+});
+const selectTheme = (value: string) => {
+  selectedTheme.value = value;
+  setAppTheme?.(value);
+};
 
 const toggleSection = (key: SectionKey) => {
   sectionVisibility[key] = !sectionVisibility[key];
@@ -343,7 +384,10 @@ const userHasChanges = computed(() => {
 const submitUserForm = () => {
   userError.value = "";
   if (!userHasChanges.value) return;
-  if (userForm.newPassword && userForm.newPassword !== userForm.confirmPassword) {
+  if (
+    userForm.newPassword &&
+    userForm.newPassword !== userForm.confirmPassword
+  ) {
     userError.value = "Passwords do not match.";
     return;
   }
@@ -523,29 +567,6 @@ const submitUserForm = () => {
                 Turn this on to mask the support banner in the sidebar.
               </p>
             </label>
-
-            <!-- SECRET_KEY -->
-            <label class="form-control w-full md:col-span-2">
-              <div class="label">
-                <span
-                  class="flex items-center gap-2 label-text text-xs font-semibold uppercase tracking-wide text-base-content/80"
-                >
-                  SECRET_KEY
-                  <div
-                    class="tooltip tooltip-info normal-case"
-                    data-tip="A secret key used for JWT signing and encrypting sensitive data. Change for production deployments."
-                  >
-                    <HelpCircle class="h-3.5 w-3.5 text-primary" />
-                  </div>
-                </span>
-              </div>
-              <input
-                v-model="props.form.secretKey"
-                class="input input-bordered input-sm rounded-xl bg-base-100/70 focus:outline-none focus:ring-2 focus:ring-primary/40 w-full"
-                type="password"
-                placeholder="dev-secret-key"
-              />
-            </label>
           </form>
         </div>
       </div>
@@ -557,7 +578,10 @@ const submitUserForm = () => {
       class="card bg-base-100/80 backdrop-blur border border-base-200/70 shadow-lg"
     >
       <div class="card-body space-y-5">
-        <div class="flex items-start justify-between gap-3 cursor-pointer" @click="toggleSection('account')">
+        <div
+          class="flex items-start justify-between gap-3 cursor-pointer"
+          @click="toggleSection('account')"
+        >
           <div class="flex items-start gap-3">
             <div
               class="flex h-10 w-10 items-center justify-center rounded-2xl bg-base-200 text-base-content"
@@ -590,7 +614,10 @@ const submitUserForm = () => {
           <div class="grid gap-4 md:grid-cols-2">
             <label class="form-control w-full">
               <div class="label">
-                <span class="label-text text-xs font-semibold uppercase tracking-wide text-base-content/80">Full name</span>
+                <span
+                  class="label-text text-xs font-semibold uppercase tracking-wide text-base-content/80"
+                  >Full name</span
+                >
               </div>
               <input
                 v-model="userForm.name"
@@ -600,7 +627,10 @@ const submitUserForm = () => {
             </label>
             <label class="form-control w-full">
               <div class="label">
-                <span class="label-text text-xs font-semibold uppercase tracking-wide text-base-content/80">Email</span>
+                <span
+                  class="label-text text-xs font-semibold uppercase tracking-wide text-base-content/80"
+                  >Email</span
+                >
               </div>
               <input
                 v-model="userForm.email"
@@ -614,7 +644,10 @@ const submitUserForm = () => {
           <div class="grid gap-4 md:grid-cols-2">
             <label class="form-control w-full">
               <div class="label">
-                <span class="label-text text-xs font-semibold uppercase tracking-wide text-base-content/80">Current password</span>
+                <span
+                  class="label-text text-xs font-semibold uppercase tracking-wide text-base-content/80"
+                  >Current password</span
+                >
               </div>
               <input
                 v-model="userForm.currentPassword"
@@ -625,7 +658,10 @@ const submitUserForm = () => {
             </label>
             <label class="form-control w-full">
               <div class="label">
-                <span class="label-text text-xs font-semibold uppercase tracking-wide text-base-content/80">New password</span>
+                <span
+                  class="label-text text-xs font-semibold uppercase tracking-wide text-base-content/80"
+                  >New password</span
+                >
               </div>
               <input
                 v-model="userForm.newPassword"
@@ -636,7 +672,10 @@ const submitUserForm = () => {
             </label>
             <label class="form-control w-full md:col-span-2">
               <div class="label">
-                <span class="label-text text-xs font-semibold uppercase tracking-wide text-base-content/80">Confirm new password</span>
+                <span
+                  class="label-text text-xs font-semibold uppercase tracking-wide text-base-content/80"
+                  >Confirm new password</span
+                >
               </div>
               <input
                 v-model="userForm.confirmPassword"
@@ -648,7 +687,9 @@ const submitUserForm = () => {
           </div>
 
           <div class="flex items-center justify-between">
-            <div class="text-xs text-error" v-if="userError">{{ userError }}</div>
+            <div class="text-xs text-error" v-if="userError">
+              {{ userError }}
+            </div>
             <div class="flex items-center gap-2">
               <button
                 class="btn btn-primary btn-sm rounded-full"
@@ -659,8 +700,84 @@ const submitUserForm = () => {
               >
                 Save user settings
               </button>
-              <button class="btn btn-ghost btn-sm rounded-full" type="button" @click="syncUserForm">
+              <button
+                class="btn btn-ghost btn-sm rounded-full"
+                type="button"
+                @click="syncUserForm"
+              >
                 Reset
+              </button>
+            </div>
+          </div>
+          <div class="space-y-2">
+            <div class="flex items-center justify-between">
+              <p class="text-sm font-semibold text-base-content/80">Theme</p>
+              <span class="text-xs text-base-content/60"
+                >Pick your look. Stored locally.</span
+              >
+            </div>
+            <div
+              class="rounded-box grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
+            >
+              <button
+                v-for="themeOption in availableThemes"
+                :key="themeOption.value"
+                type="button"
+                class="border-base-content/20 hover:border-base-content/40 overflow-hidden rounded-lg border outline-2 outline-offset-2 outline-transparent transition"
+                :class="{
+                  'outline-base-content': selectedTheme === themeOption.value,
+                }"
+                :data-set-theme="themeOption.value"
+                @click.stop="selectTheme(themeOption.value)"
+              >
+                <div
+                  class="bg-base-100 text-base-content w-full cursor-pointer font-sans"
+                  :data-theme="themeOption.value"
+                >
+                  <div class="grid grid-cols-5 grid-rows-3">
+                    <div
+                      class="bg-base-200 col-start-1 row-span-2 row-start-1"
+                    ></div>
+                    <div class="bg-base-300 col-start-1 row-start-3"></div>
+                    <div
+                      class="bg-base-100 col-span-4 col-start-2 row-span-3 row-start-1 flex flex-col gap-1 p-2"
+                    >
+                      <div class="font-bold capitalize">
+                        {{ themeOption.label }}
+                      </div>
+                      <div class="flex flex-wrap gap-1">
+                        <div
+                          class="bg-primary flex aspect-square w-5 items-center justify-center rounded lg:w-6"
+                        >
+                          <div class="text-primary-content text-sm font-bold">
+                            A
+                          </div>
+                        </div>
+                        <div
+                          class="bg-secondary flex aspect-square w-5 items-center justify-center rounded lg:w-6"
+                        >
+                          <div class="text-secondary-content text-sm font-bold">
+                            A
+                          </div>
+                        </div>
+                        <div
+                          class="bg-accent flex aspect-square w-5 items-center justify-center rounded lg:w-6"
+                        >
+                          <div class="text-accent-content text-sm font-bold">
+                            A
+                          </div>
+                        </div>
+                        <div
+                          class="bg-neutral flex aspect-square w-5 items-center justify-center rounded lg:w-6"
+                        >
+                          <div class="text-neutral-content text-sm font-bold">
+                            A
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </button>
             </div>
           </div>
@@ -1202,10 +1319,14 @@ const submitUserForm = () => {
                   class="checkbox checkbox-sm checkbox-accent"
                   v-model="props.form.notifications.smtp.tls"
                 />
-                <span class="label-text text-xs font-semibold uppercase tracking-wide text-base-content/80">Use SSL/TLS</span>
+                <span
+                  class="label-text text-xs font-semibold uppercase tracking-wide text-base-content/80"
+                  >Use SSL/TLS</span
+                >
               </div>
               <p class="text-[0.7rem] text-base-content/60 mt-1">
-                Turn on if your SMTP server requires SSL/TLS (implicit TLS or STARTTLS).
+                Turn on if your SMTP server requires SSL/TLS (implicit TLS or
+                STARTTLS).
               </p>
             </label>
 

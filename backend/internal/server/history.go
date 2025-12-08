@@ -77,5 +77,3 @@ func (s *Server) recordUpdateHistory(entry UpdateHistory) {
 
 	go s.sendImmediateNotification(entry)
 }
-
-

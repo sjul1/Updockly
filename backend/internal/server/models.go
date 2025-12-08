@@ -89,19 +89,22 @@ func (m *JSONMap) Scan(value interface{}) error {
 }
 
 type Account struct {
-	ID               string `gorm:"primaryKey"`
-	Name             string
-	Username         string `gorm:"uniqueIndex"`
-	Email            string
-	PasswordHash     string
-	ResetToken       string
-	ResetTokenExpiry *time.Time
-	Role             string
-	TwoFactorSecret  string
-	TwoFactorEnabled bool
-	RecoveryCodes    StringList `gorm:"type:jsonb"`
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID                 string `gorm:"primaryKey"`
+	Name               string
+	Username           string `gorm:"uniqueIndex"`
+	Email              string
+	PasswordHash       string
+	ResetToken         string
+	ResetTokenHash     string
+	ResetTokenExpiry   *time.Time
+	RefreshTokenHash   string
+	RefreshTokenExpiry *time.Time
+	Role               string
+	TwoFactorSecret    string
+	TwoFactorEnabled   bool
+	RecoveryCodes      StringList `gorm:"type:jsonb"`
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 func (a *Account) BeforeCreate(*gorm.DB) error {
@@ -182,21 +185,25 @@ func (s *Schedule) BeforeCreate(*gorm.DB) error {
 }
 
 type Agent struct {
-	ID            string                `gorm:"primaryKey" json:"id"`
-	Name          string                `json:"name"`
-	Hostname      string                `json:"hostname"`
-	AgentVersion  string                `json:"agentVersion"`
-	DockerVersion string                `json:"dockerVersion"`
-	Platform      string                `json:"platform"`
-	Notes         string                `json:"notes"`
-	Token         string                `json:"-"` // stored secret for agent auth
-	LastSeen      *time.Time            `json:"lastSeen,omitempty"`
-	Containers    ContainerSnapshotList `gorm:"type:jsonb;serializer:json" json:"-"`
-	TLSEnabled    bool                  `json:"tlsEnabled"`
-	CPU           float64               `json:"cpu"`
-	Memory        float64               `json:"memory"`
-	CreatedAt     time.Time             `json:"createdAt"`
-	UpdatedAt     time.Time             `json:"updatedAt"`
+	ID             string                `gorm:"primaryKey" json:"id"`
+	Name           string                `json:"name"`
+	Hostname       string                `json:"hostname"`
+	AgentVersion   string                `json:"agentVersion"`
+	DockerVersion  string                `json:"dockerVersion"`
+	Platform       string                `json:"platform"`
+	Notes          string                `json:"notes"`
+	Token          string                `json:"-"` // legacy stored secret for agent auth
+	TokenHash      string                `json:"-"`
+	TokenVersion   int                   `json:"-"`
+	TokenExpiresAt *time.Time            `json:"-"`
+	TokenBinding   string                `json:"-"`
+	LastSeen       *time.Time            `json:"lastSeen,omitempty"`
+	Containers     ContainerSnapshotList `gorm:"type:jsonb;serializer:json" json:"-"`
+	TLSEnabled     bool                  `json:"tlsEnabled"`
+	CPU            float64               `json:"cpu"`
+	Memory         float64               `json:"memory"`
+	CreatedAt      time.Time             `json:"createdAt"`
+	UpdatedAt      time.Time             `json:"updatedAt"`
 }
 
 func (a *Agent) BeforeCreate(*gorm.DB) error {
