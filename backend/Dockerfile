@@ -10,7 +10,7 @@ RUN go mod download
 COPY . .
 
 # Build the application from the new cmd path
-RUN CGO_ENABLED=0 GOOS=linux go build -o updockly-backend ./cmd/updockly
+RUN CGO_ENABLED=0 GOOS=linux go build -o updockly-backend ./cmd/updockly-api
 
 FROM alpine:latest
 
