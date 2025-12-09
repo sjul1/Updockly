@@ -157,3 +157,5 @@ docker-compose-dev.yml
 tmp/
 scripts/
 updockly-agent/agent
+backend/.air.toml
+backend/.gocache

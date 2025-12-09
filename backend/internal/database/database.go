@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"updockly/backend/internal/config"
-	"updockly/backend/internal/server"
+	"updockly/backend/internal/domain"
 )
 
 // Connect opens a GORM database connection and runs migrations.
@@ -42,12 +42,12 @@ func Connect(cfg config.Config) (*gorm.DB, error) {
 	sqlDB.SetConnMaxLifetime(30 * time.Minute)
 
 	if err := db.AutoMigrate(
-		&server.Account{},
-		&server.ContainerSettings{},
-		&server.Schedule{},
-		&server.Agent{},
-		&server.AgentCommand{},
-		&server.UpdateHistory{},
+		&domain.Account{},
+		&domain.ContainerSettings{},
+		&domain.Schedule{},
+		&domain.Agent{},
+		&domain.AgentCommand{},
+		&domain.UpdateHistory{},
 	); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
