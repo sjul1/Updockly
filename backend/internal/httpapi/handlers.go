@@ -681,8 +681,8 @@ func (s *Server) setupGenerateHandler(c *gin.Context) {
 	settings := config.CurrentRuntimeSettings()
 	settings.SecretKey = secret
 	if err := config.SaveRuntimeSettings(config.EnvFilePath, settings); err != nil {
-		respondInternal(c, "failed to persist setup secrets", wrapErr("save runtime settings", err))
-		return
+		// Continue to allow setup to proceed in read-only envs, but surface warning.
+		s.log.Warn("failed to persist setup secrets; please add them to the env file manually", "error", err, "envPath", config.EnvFilePath)
 	}
 	s.applyRuntimeSettings(settings)
 
@@ -766,10 +766,18 @@ func (s *Server) setupCreateHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{
+	resp := gin.H{
 		"message":       "admin account created successfully",
 		"recoveryCodes": codes,
-	})
+	}
+	if s.cfg.JWTSecretGenerated {
+		resp["jwtSecret"] = s.cfg.JWTSecret
+	}
+	if s.cfg.VaultKeyGenerated {
+		resp["vaultKey"] = s.cfg.VaultKey
+	}
+
+	c.JSON(http.StatusCreated, resp)
 }
 
 func (s *Server) getSettings(c *gin.Context) {

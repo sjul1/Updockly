@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
 import { ApiError, api } from "../services/api";
-import { Lock, Shield, Key, Download, Moon, Sun } from "lucide-vue-next";
+import { Lock, Shield, Key, Download, Moon, Sun, Copy } from "lucide-vue-next";
 import { useToast } from "vue-toastification";
 
 const emit = defineEmits<{
@@ -113,6 +113,36 @@ const generate2FA = async () => {
 };
 
 const recoveryCodes = ref<string[]>([]);
+const generatedSecrets = ref<{ jwtSecret?: string; vaultKey?: string } | null>(null);
+const maskSecret = (value: string) => {
+  if (!value) return "";
+  if (value.length <= 8) return "*".repeat(value.length);
+  return `${value.slice(0, 4)}****${value.slice(-4)}`;
+};
+
+const copySecret = async (key: "jwtSecret" | "vaultKey") => {
+  if (!generatedSecrets.value) return;
+  const value = generatedSecrets.value[key];
+  if (!value) return;
+  const line =
+    key === "vaultKey" ? `VAULT_KEY=${value}` : `JWT_SECRET=${value}`;
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(line);
+    } else {
+      const textarea = document.createElement("textarea");
+      textarea.value = line;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+    }
+    toast.success(`${key === "vaultKey" ? "VAULT_KEY" : "JWT_SECRET"} copied`);
+  } catch (err) {
+    toast.error("Unable to copy secrets");
+  }
+};
 
 const createAdmin = async () => {
   loading.value = true;
@@ -120,6 +150,10 @@ const createAdmin = async () => {
   try {
     const response = await api.setupCreate(adminForm);
     recoveryCodes.value = response.recoveryCodes;
+    generatedSecrets.value =
+      response.jwtSecret || response.vaultKey
+        ? { jwtSecret: response.jwtSecret, vaultKey: response.vaultKey }
+        : null;
   } catch (error) {
     formError.value =
       error instanceof Error ? error.message : "Failed to create admin account";
@@ -166,6 +200,55 @@ const toggleTheme = () => emit("toggle-theme");
           </div>
         </div>
         <div class="mt-6 space-y-4">
+          <div
+            v-if="generatedSecrets"
+            class="alert alert-info shadow-lg border border-info/40"
+          >
+            <div class="space-y-3">
+              <div class="space-y-1">
+                <div>
+                  <h3 class="font-bold">Persist your generated secrets</h3>
+                  <p class="text-xs">
+                    JWT and Vault keys were generated because none were provided.
+                    Add the following values to the <code>.env</code> file loaded
+                    by the backend container so they survive restarts.
+                  </p>
+                </div>
+              </div>
+              <div class="space-y-1 font-mono text-xs">
+                <div
+                  v-if="generatedSecrets.jwtSecret"
+                  class="flex items-center gap-2"
+                >
+                  <span class="font-semibold">JWT_SECRET</span>:
+                  <span class="flex-1">{{ maskSecret(generatedSecrets.jwtSecret) }}</span>
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-xs"
+                    @click="copySecret('jwtSecret')"
+                    :aria-label="'Copy JWT_SECRET'"
+                  >
+                    <Copy class="w-4 h-4" />
+                  </button>
+                </div>
+                <div
+                  v-if="generatedSecrets.vaultKey"
+                  class="flex items-center gap-2"
+                >
+                  <span class="font-semibold">VAULT_KEY</span>:
+                  <span class="flex-1">{{ maskSecret(generatedSecrets.vaultKey) }}</span>
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-xs"
+                    @click="copySecret('vaultKey')"
+                    :aria-label="'Copy VAULT_KEY'"
+                  >
+                    <Copy class="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
           <div class="alert alert-warning shadow-lg">
             <div>
               <h3 class="font-bold">Important!</h3>

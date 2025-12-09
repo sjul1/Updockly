@@ -14,24 +14,27 @@ import (
 
 // Config holds runtime configuration derived from environment variables.
 type Config struct {
-	Addr              string
-	DatabaseURL       string
-	SecretKey         string
-	JWTSecret         string
-	VaultKey          string
-	JWTSecretPrevious string
-	VaultKeyPrevious  string
-	ClientOrigin      string
-	LogLevel          string
-	HideSupportButton bool
-	Timezone          string
-	AutoPruneImages   bool
-	Notifications     NotificationSettings
-	SSO               SSOSettings
-	DBHost            string
-	DBPort            int
-	DBName            string
+	Addr                  string
+	DatabaseURL           string
+	SecretKey             string
+	JWTSecret             string
+	VaultKey              string
+	JWTSecretPrevious     string
+	VaultKeyPrevious      string
+	ClientOrigin          string
+	LogLevel              string
+	HideSupportButton     bool
+	Timezone              string
+	AutoPruneImages       bool
+	Notifications         NotificationSettings
+	SSO                   SSOSettings
+	DBHost                string
+	DBPort                int
+	DBName                string
 	AgentRequireIPBinding bool
+	// Flags indicating the secrets were generated at runtime because env was empty.
+	JWTSecretGenerated bool
+	VaultKeyGenerated  bool
 }
 
 // Load reads environment variables and applies sane defaults.
@@ -47,6 +50,9 @@ func Load() Config {
 	jwtSecret := strings.TrimSpace(getEnv("JWT_SECRET", ""))
 	vaultKey := strings.TrimSpace(getEnv("VAULT_KEY", ""))
 
+	jwtGenerated := false
+	vaultGenerated := false
+
 	// Migrate legacy SECRET_KEY to dedicated keys.
 	if jwtSecret == "" && vaultKey == "" && rawSecret != "" {
 		jwtSecret = rawSecret
@@ -60,33 +66,38 @@ func Load() Config {
 	if jwtSecret == "" {
 		jwtSecret = randomString(48)
 		_ = os.Setenv("JWT_SECRET", jwtSecret)
+		jwtGenerated = true
 	}
 	if vaultKey == "" {
 		vaultKey = randomString(48)
 		_ = os.Setenv("VAULT_KEY", vaultKey)
+		vaultGenerated = true
 	}
 	// Ensure distinct keys when both were missing and generated in the same run.
 	if jwtSecret == vaultKey {
 		vaultKey = randomString(48)
 		_ = os.Setenv("VAULT_KEY", vaultKey)
+		vaultGenerated = true
 	}
 
 	cfg := Config{
-		Addr:              getEnv("SERVER_ADDR", ":5000"),
-		DatabaseURL:       dbURL,
-		SecretKey:         rawSecret,
-		JWTSecret:         jwtSecret,
-		VaultKey:          vaultKey,
-		JWTSecretPrevious: getEnv("JWT_SECRET_PREVIOUS", ""),
-		VaultKeyPrevious:  getEnv("VAULT_KEY_PREVIOUS", ""),
-		ClientOrigin:      os.Getenv("CLIENT_ORIGIN"),
-		LogLevel:          getEnv("LOG_LEVEL", "info"),
-		HideSupportButton: boolFromEnv("HIDE_SUPPORT_BUTTON"),
+		Addr:                  getEnv("SERVER_ADDR", ":5000"),
+		DatabaseURL:           dbURL,
+		SecretKey:             rawSecret,
+		JWTSecret:             jwtSecret,
+		VaultKey:              vaultKey,
+		JWTSecretPrevious:     getEnv("JWT_SECRET_PREVIOUS", ""),
+		VaultKeyPrevious:      getEnv("VAULT_KEY_PREVIOUS", ""),
+		ClientOrigin:          os.Getenv("CLIENT_ORIGIN"),
+		LogLevel:              getEnv("LOG_LEVEL", "info"),
+		HideSupportButton:     boolFromEnv("HIDE_SUPPORT_BUTTON"),
 		AgentRequireIPBinding: boolFromEnv("AGENT_REQUIRE_IP_BINDING"),
-		Timezone:          getEnv("TIMEZONE", "UTC"),
-		AutoPruneImages:   settings.AutoPrune,
-		Notifications:     settings.Notifications,
-		SSO:               settings.SSO,
+		Timezone:              getEnv("TIMEZONE", "UTC"),
+		AutoPruneImages:       settings.AutoPrune,
+		Notifications:         settings.Notifications,
+		SSO:                   settings.SSO,
+		JWTSecretGenerated:    jwtGenerated,
+		VaultKeyGenerated:     vaultGenerated,
 	}
 
 	host, port, db := ParseDatabaseURL(cfg.DatabaseURL)

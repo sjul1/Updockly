@@ -451,7 +451,7 @@ export const api = {
     }),
 
   setupCreate: (payload: unknown) =>
-    request<{ message: string; recoveryCodes: string[] }>("/auth/setup/create", {
+    request<{ message: string; recoveryCodes: string[]; jwtSecret?: string; vaultKey?: string }>("/auth/setup/create", {
       method: "POST",
       body: JSON.stringify(payload),
     }),
