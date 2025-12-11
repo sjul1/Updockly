@@ -443,6 +443,9 @@ export const api = {
   getSetupRuntimeSettings: () =>
     request<{
       databaseUrl?: string;
+      jwtSecret?: string;
+      vaultKey?: string;
+      recoveryCodes?: string[];
     }>("/auth/setup/runtime-settings", {}, true, 500),
 
   setupGenerate: () =>

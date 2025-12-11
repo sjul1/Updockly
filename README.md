@@ -70,6 +70,12 @@ Updockly is configured using environment variables. You can set these in your `.
 - **Web UI Settings**: Database, timezone, certificates, and more.
 - **`.env` Config**: Full environment variable control.
 
+**Env-only keys**: `DATABASE_URL`, `JWT_SECRET`, `VAULT_KEY`, `CLIENT_ORIGIN`, `SERVER_ADDR`.
+These must be provided via environment/.env and are not editable in the UI.
+
+**Runtime settings**: Everything else (timezone, notifications, SMTP, SSO, UI toggles, agent/runtime flags) is stored in the database.
+The UI loads defaults from env on first boot and persists changes to the DB so they survive container recreations.
+
 <p align="center">
   <img src="docs/screenshots/settings.png" alt="Settings Screenshot" width="65%">
 </p>

@@ -135,6 +135,8 @@ const progress = reactive(new Map<string, Progress[]>());
 const refreshTimer = ref<number | null>(null);
 const REFRESH_INTERVAL = 30000;
 const REFRESH_JITTER = 5000;
+const agentRefreshTimer = ref<number | null>(null);
+const AGENT_REFRESH_INTERVAL = 5000;
 const updateAvailableOverrides = reactive<Record<string, boolean>>({});
 const autoRefreshEnabled = ref(true);
 const quickActionState = reactive<{
@@ -502,9 +504,12 @@ const toggleAutoUpdate = async (container: Container) => {
 };
 
 const startAutoRefresh = () => {
-  if (refreshTimer.value) return;
-  const baseInterval = REFRESH_INTERVAL + Math.floor(Math.random() * REFRESH_JITTER);
-  refreshTimer.value = window.setInterval(autoRefreshTick, baseInterval);
+  if (!refreshTimer.value) {
+    const baseInterval =
+      REFRESH_INTERVAL + Math.floor(Math.random() * REFRESH_JITTER);
+    refreshTimer.value = window.setInterval(autoRefreshTick, baseInterval);
+  }
+  startAgentRefresh();
 };
 
 const stopAutoRefresh = () => {
@@ -512,6 +517,7 @@ const stopAutoRefresh = () => {
     window.clearInterval(refreshTimer.value);
     refreshTimer.value = null;
   }
+  stopAgentRefresh();
 };
 
 const autoRefreshTick = () => {
@@ -519,8 +525,28 @@ const autoRefreshTick = () => {
   if (hasInFlightActions.value) return;
   if (loading.value) return;
   void fetchContainers({ silent: true });
-  void fetchAgentContainers({ silent: true });
   void fetchHostInfo();
+};
+
+const startAgentRefresh = () => {
+  if (agentRefreshTimer.value) return;
+  const baseInterval =
+    AGENT_REFRESH_INTERVAL + Math.floor(Math.random() * REFRESH_JITTER);
+  agentRefreshTimer.value = window.setInterval(agentRefreshTick, baseInterval);
+};
+
+const stopAgentRefresh = () => {
+  if (agentRefreshTimer.value) {
+    window.clearInterval(agentRefreshTimer.value);
+    agentRefreshTimer.value = null;
+  }
+};
+
+const agentRefreshTick = () => {
+  if (!autoRefreshEnabled.value) return;
+  if (hasInFlightActions.value) return;
+  if (loadingAgents.value) return;
+  void fetchAgentContainers({ silent: true });
 };
 
 const hasPendingAgentActions = () =>
@@ -547,6 +573,7 @@ const toggleAutoRefresh = () => {
   if (autoRefreshEnabled.value) {
     startAutoRefresh();
     autoRefreshTick();
+    agentRefreshTick();
   } else {
     stopAutoRefresh();
   }

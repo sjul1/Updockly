@@ -645,10 +645,17 @@ func (s *Server) setupRuntimeSettingsHandler(c *gin.Context) {
 		}
 	}
 
-	settings := config.CurrentRuntimeSettings()
-	c.JSON(http.StatusOK, gin.H{
+	settings := s.currentRuntimeSettings()
+	payload := gin.H{
 		"databaseUrl": settings.DatabaseURL,
-	})
+	}
+	if s.cfg.JWTSecretGenerated {
+		payload["jwtSecret"] = s.cfg.JWTSecret
+	}
+	if s.cfg.VaultKeyGenerated {
+		payload["vaultKey"] = s.cfg.VaultKey
+	}
+	c.JSON(http.StatusOK, payload)
 }
 
 func (s *Server) setupGenerateHandler(c *gin.Context) {
@@ -678,11 +685,13 @@ func (s *Server) setupGenerateHandler(c *gin.Context) {
 		secret = util.RandomString(32)
 	}
 
-	settings := config.CurrentRuntimeSettings()
+	settings := s.currentRuntimeSettings()
 	settings.SecretKey = secret
-	if err := config.SaveRuntimeSettings(config.EnvFilePath, settings); err != nil {
+	if merged, err := s.saveRuntimeSettings(settings); err != nil {
 		// Continue to allow setup to proceed in read-only envs, but surface warning.
-		s.log.Warn("failed to persist setup secrets; please add them to the env file manually", "error", err, "envPath", config.EnvFilePath)
+		s.log.Warn("failed to persist setup secrets; ensure the database is writable or set SECRET_KEY in the env", "error", err)
+	} else {
+		settings = merged
 	}
 	s.applyRuntimeSettings(settings)
 
@@ -757,7 +766,7 @@ func (s *Server) setupCreateHandler(c *gin.Context) {
 			return
 		}
 		s.db = db
-		s.applyRuntimeSettings(config.CurrentRuntimeSettings()) // This will init services
+		s.applyRuntimeSettings(s.currentRuntimeSettings()) // This will init services
 	}
 
 	codes, err := s.authService.CreateAdmin(payload.Username, payload.Email, payload.Password, payload.Name, payload.TOTPSecret)
@@ -781,7 +790,7 @@ func (s *Server) setupCreateHandler(c *gin.Context) {
 }
 
 func (s *Server) getSettings(c *gin.Context) {
-	settings := config.CurrentRuntimeSettings()
+	settings := s.currentRuntimeSettings()
 	c.JSON(http.StatusOK, settings)
 }
 
@@ -798,13 +807,18 @@ func (s *Server) updateSettings(c *gin.Context) {
 		}
 	}
 
-	if err := config.SaveRuntimeSettings(config.EnvFilePath, payload); err != nil {
-		respondInternal(c, "failed to persist settings", wrapErr("save runtime settings", err))
+	updated, err := s.saveRuntimeSettings(payload)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if strings.Contains(err.Error(), "unavailable") {
+			status = http.StatusServiceUnavailable
+		}
+		respondError(c, status, "failed to persist settings", wrapErr("save runtime settings", err))
 		return
 	}
 
-	s.applyRuntimeSettings(payload)
-	c.JSON(http.StatusOK, payload)
+	s.applyRuntimeSettings(updated)
+	c.JSON(http.StatusOK, updated)
 }
 
 func (s *Server) regenerateRecoveryCodesHandler(c *gin.Context) {

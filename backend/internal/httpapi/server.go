@@ -29,6 +29,7 @@ import (
 	"updockly/backend/internal/history"
 	"updockly/backend/internal/logging"
 	"updockly/backend/internal/metrics"
+	"updockly/backend/internal/settings"
 	"updockly/backend/internal/vault"
 )
 
@@ -59,6 +60,8 @@ type Server struct {
 
 	loginAttempts map[string]loginAttempt
 	loginMu       sync.Mutex
+
+	settingsStore *settings.Store
 }
 
 type loginAttempt struct {
@@ -130,6 +133,7 @@ func New(cfg config.Config, db *gorm.DB) (*Server, error) {
 		loginAttempts:    make(map[string]loginAttempt),
 		historyService:   history.NewService(db),
 		metricsService:   metrics.NewService(db, loc),
+		settingsStore:    settings.NewStore(db),
 	}
 
 	srv.configureMiddleware()
@@ -139,6 +143,9 @@ func New(cfg config.Config, db *gorm.DB) (*Server, error) {
 	if db != nil {
 		srv.reencryptVaultSecrets()
 	}
+
+	// Overlay persisted settings stored in the database on top of env defaults.
+	srv.applyRuntimeSettings(srv.currentRuntimeSettings())
 
 	return srv, nil
 }
@@ -452,17 +459,47 @@ func (s *Server) reencryptVaultSecrets() {
 	}
 }
 
-func (s *Server) applyRuntimeSettings(settings config.RuntimeSettings) {
+func (s *Server) currentRuntimeSettings() config.RuntimeSettings {
+	base := config.CurrentRuntimeSettings()
+	if s.settingsStore == nil || s.db == nil {
+		return base
+	}
+	stored, found, err := s.settingsStore.Load()
+	if err != nil {
+		s.log.Warn("failed to load runtime settings from database; falling back to env", "error", err)
+		return base
+	}
+	if !found {
+		return base
+	}
+	return settings.Merge(base, stored)
+}
+
+func (s *Server) saveRuntimeSettings(payload config.RuntimeSettings) (config.RuntimeSettings, error) {
+	if s.settingsStore == nil || s.db == nil {
+		return config.RuntimeSettings{}, fmt.Errorf("settings store unavailable")
+	}
+
+	base := s.currentRuntimeSettings()
+	normalized := settings.NormalizeForStorage(base, payload)
+	stored, err := s.settingsStore.Save(normalized)
+	if err != nil {
+		return config.RuntimeSettings{}, err
+	}
+	return settings.Merge(config.CurrentRuntimeSettings(), stored), nil
+}
+
+func (s *Server) applyRuntimeSettings(runtimeSettings config.RuntimeSettings) {
 	oldDBURL := s.cfg.DatabaseURL
-	s.cfg.DatabaseURL = settings.DatabaseURL
-	s.cfg.ClientOrigin = settings.ClientOrigin
+	s.cfg.DatabaseURL = runtimeSettings.DatabaseURL
+	s.cfg.ClientOrigin = runtimeSettings.ClientOrigin
 	// SECRET_KEY is retained for legacy; JWT/Vault keys are sourced from environment.
-	s.cfg.SecretKey = settings.SecretKey
-	s.cfg.HideSupportButton = settings.HideSupport
-	s.cfg.Timezone = settings.Timezone
-	s.cfg.AutoPruneImages = settings.AutoPrune
-	s.cfg.Notifications = settings.Notifications
-	s.cfg.SSO = settings.SSO
+	s.cfg.SecretKey = runtimeSettings.SecretKey
+	s.cfg.HideSupportButton = runtimeSettings.HideSupport
+	s.cfg.Timezone = runtimeSettings.Timezone
+	s.cfg.AutoPruneImages = runtimeSettings.AutoPrune
+	s.cfg.Notifications = runtimeSettings.Notifications
+	s.cfg.SSO = runtimeSettings.SSO
 
 	if s.cfg.SecretKey != "" {
 		// Preserve existing vault/jwt keys; do not overwrite them with legacy secret.
@@ -470,14 +507,14 @@ func (s *Server) applyRuntimeSettings(settings config.RuntimeSettings) {
 		s.jwtSecret = []byte(s.cfg.JWTSecret)
 	}
 
-	if settings.Timezone != "" {
-		if loc, err := time.LoadLocation(settings.Timezone); err == nil {
+	if runtimeSettings.Timezone != "" {
+		if loc, err := time.LoadLocation(runtimeSettings.Timezone); err == nil {
 			s.timezone = loc
 			time.Local = loc
 		}
 	}
 
-	// If the database URL has changed or if s.db is nil (initial setup), attempt to connect
+	// If the database URL has changed or if s.db is nil (initial setup), attempt to connect.
 	if s.cfg.DatabaseURL != "" && (s.db == nil || s.cfg.DatabaseURL != oldDBURL) {
 		var dial gorm.Dialector
 		lower := strings.ToLower(s.cfg.DatabaseURL)
@@ -499,6 +536,7 @@ func (s *Server) applyRuntimeSettings(settings config.RuntimeSettings) {
 					&AgentCommand{},
 					&UpdateHistory{},
 					&RunningSnapshot{},
+					&settings.Record{},
 				); err == nil {
 					s.db = db
 					s.agentService = agents.NewAgentService(db, s.cfg.AgentRequireIPBinding)
@@ -506,13 +544,14 @@ func (s *Server) applyRuntimeSettings(settings config.RuntimeSettings) {
 					s.containerService = containers.NewContainerService(db)
 					s.historyService = history.NewService(db)
 					s.metricsService = metrics.NewService(db, s.timezone)
+					s.settingsStore = settings.NewStore(db)
 					s.reencryptVaultSecrets()
 				}
 			}
 		}
 	}
 
-	host, port, db := config.ParseDatabaseURL(settings.DatabaseURL)
+	host, port, db := config.ParseDatabaseURL(runtimeSettings.DatabaseURL)
 	if host != "" {
 		s.cfg.DBHost = host
 		s.cfg.DBPort = port

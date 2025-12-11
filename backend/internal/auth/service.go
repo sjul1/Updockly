@@ -244,10 +244,15 @@ func (s *AuthService) CreateAdmin(username, email, password, name, totpSecret st
 		return nil, err
 	}
 
+	fullName := strings.TrimSpace(name)
+	if fullName == "" {
+		fullName = username
+	}
+
 	account := domain.Account{
 		Username:         username,
 		Email:            email,
-		Name:             name,
+		Name:             fullName,
 		PasswordHash:     hashSecret(password),
 		Role:             "admin",
 		TwoFactorSecret:  cipher,

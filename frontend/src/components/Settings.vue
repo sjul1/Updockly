@@ -187,6 +187,8 @@ const setAppTheme = inject<(theme: string) => void>(
     document.documentElement.setAttribute("data-theme", value);
   }
 );
+const autoPruneId = "auto-prune-images-toggle";
+const hideSupportId = "hide-support-toggle";
 const availableThemes = [
   { value: "light", label: "Light" },
   { value: "dark", label: "Dark" },
@@ -412,22 +414,22 @@ const submitUserForm = () => {
           class="flex items-start justify-between gap-3 cursor-pointer"
           @click="toggleSection('runtime')"
         >
-          <div class="flex items-start gap-3">
-            <div
-              class="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary/10 text-primary"
-            >
-              <SlidersHorizontal class="w-5 h-5" />
+            <div class="flex items-start gap-3">
+              <div
+                class="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary/10 text-primary"
+              >
+                <SlidersHorizontal class="w-5 h-5" />
+              </div>
+              <div>
+                <h3 class="card-title text-lg">Runtime</h3>
+                <p class="text-xs text-base-content/70 mt-1">
+                  Configure runtime behavior for scheduling, notifications, and
+                  UI preferences.
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 class="card-title text-lg">Runtime &amp; secrets</h3>
-              <p class="text-xs text-base-content/70 mt-1">
-                Configure database access, trusted client origins, and secret
-                material used by the scheduler and API.
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
+            <button
+              type="button"
             class="btn btn-ghost btn-xs rounded-full gap-1"
             tabindex="-1"
           >
@@ -444,50 +446,6 @@ const submitUserForm = () => {
         <div v-show="sectionVisibility.runtime" class="space-y-5">
           <!-- Form -->
           <form class="grid gap-4 md:grid-cols-2">
-            <!-- DATABASE_URL -->
-            <label class="form-control w-full">
-              <div class="label">
-                <span
-                  class="flex items-center gap-2 label-text text-xs font-semibold uppercase tracking-wide text-base-content/80"
-                >
-                  DATABASE_URL
-                  <div
-                    class="tooltip tooltip-info normal-case"
-                    data-tip="Connection string for the application's internal database (e.g., PostgreSQL or SQLite DSN)."
-                  >
-                    <HelpCircle class="h-3.5 w-3.5 text-primary" />
-                  </div>
-                </span>
-              </div>
-              <input
-                v-model="props.form.databaseUrl"
-                class="input input-bordered input-sm rounded-xl bg-base-100/70 focus:outline-none focus:ring-2 focus:ring-primary/40 w-full"
-                placeholder="postgres://user:pass@host:5432/updockly?sslmode=disable"
-              />
-            </label>
-
-            <!-- CLIENT_ORIGIN -->
-            <label class="form-control w-full">
-              <div class="label">
-                <span
-                  class="flex items-center gap-2 label-text text-xs font-semibold uppercase tracking-wide text-base-content/80"
-                >
-                  CLIENT_ORIGIN
-                  <div
-                    class="tooltip tooltip-info normal-case"
-                    data-tip="The URL of the frontend application. Used for CORS and security checks."
-                  >
-                    <HelpCircle class="h-3.5 w-3.5 text-primary" />
-                  </div>
-                </span>
-              </div>
-              <input
-                v-model="props.form.clientOrigin"
-                class="input input-bordered input-sm rounded-xl bg-base-100/70 focus:outline-none focus:ring-2 focus:ring-primary/40 w-full"
-                placeholder="http://localhost:5173"
-              />
-            </label>
-
             <!-- TIMEZONE -->
             <label class="form-control w-full">
               <div class="label">
@@ -518,9 +476,10 @@ const submitUserForm = () => {
             </label>
 
             <!-- AUTO PRUNE IMAGES -->
-            <label class="form-control w-full md:col-span-2">
+            <div class="form-control w-full md:col-span-2">
               <div class="label">
-                <span
+                <label
+                  :for="autoPruneId"
                   class="flex items-center gap-2 label-text text-xs font-semibold uppercase tracking-wide text-base-content/80"
                 >
                   Auto-prune images after updates
@@ -530,10 +489,11 @@ const submitUserForm = () => {
                   >
                     <HelpCircle class="h-3.5 w-3.5 text-primary" />
                   </div>
-                </span>
+                </label>
                 <input
                   type="checkbox"
                   class="toggle toggle-primary"
+                  :id="autoPruneId"
                   v-model="props.form.autoPruneImages"
                 />
               </div>
@@ -541,12 +501,13 @@ const submitUserForm = () => {
                 When enabled, Updockly will call Docker image prune after
                 auto-update runs complete.
               </p>
-            </label>
+            </div>
 
             <!-- HIDE SUPPORT BUTTON -->
-            <label class="form-control w-full md:col-span-2">
+            <div class="form-control w-full md:col-span-2">
               <div class="label">
-                <span
+                <label
+                  :for="hideSupportId"
                   class="flex items-center gap-2 label-text text-xs font-semibold uppercase tracking-wide text-base-content/80"
                 >
                   Hide sidebar support button
@@ -556,17 +517,18 @@ const submitUserForm = () => {
                   >
                     <HelpCircle class="h-3.5 w-3.5 text-primary" />
                   </div>
-                </span>
+                </label>
                 <input
                   type="checkbox"
                   class="toggle toggle-primary"
+                  :id="hideSupportId"
                   v-model="props.form.hideSupportButton"
                 />
               </div>
               <p class="text-xs text-base-content/60">
                 Turn this on to mask the support banner in the sidebar.
               </p>
-            </label>
+            </div>
           </form>
         </div>
       </div>

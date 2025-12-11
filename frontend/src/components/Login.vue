@@ -266,7 +266,7 @@ const toggleReset2FAMode = () => {
 </script>
 
 <template>
-  <div id="login-wrapper">
+  <div id="login-wrapper" class="w-full">
     <!-- Loading Overlay -->
     <div
       v-if="isReloading"
@@ -280,7 +280,7 @@ const toggleReset2FAMode = () => {
     <!-- Main Content -->
     <div
       v-else
-      class="w-full max-w-md rounded-3xl bg-base-100/90 p-8 shadow-xl backdrop-blur"
+      class="w-full max-w-[520px] rounded-3xl bg-base-100/90 p-10 shadow-xl backdrop-blur mx-auto"
     >
       <div
         v-if="
@@ -349,40 +349,74 @@ const toggleReset2FAMode = () => {
           !isTokenResetMode
         "
         @submit.prevent="handleSubmit"
-        class="mt-6 w-full max-w-sm mx-auto space-y-4"
+        class="mt-6 w-full max-w-md mx-auto space-y-6"
       >
         <label class="form-control w-full">
-          <div class="label">
-            <span class="text-xs font-semibold uppercase tracking-wide"
-              >Username</span
+          <label
+            class="input input-bordered rounded-xl bg-base-100/70 focus-within:ring-2 focus-within:ring-primary/40 w-full flex items-center gap-2"
+          >
+            <svg
+              class="h-[1em] opacity-50"
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
             >
-          </div>
-          <input
-            v-model.trim="form.username"
-            id="username"
-            name="username"
-            type="text"
-            class="input input-bordered input-sm rounded-xl bg-base-100/70 focus:outline-none focus:ring-2 focus:ring-primary/40 w-full"
-            autocomplete="username"
-            required
-          />
+              <g
+                stroke-linejoin="round"
+                stroke-linecap="round"
+                stroke-width="2.5"
+                fill="none"
+                stroke="currentColor"
+              >
+                <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+              </g>
+            </svg>
+            <input
+              v-model.trim="form.username"
+              id="username"
+              name="username"
+              type="text"
+              class="grow text-sm"
+              placeholder="Username"
+              autocomplete="username"
+              required
+            />
+          </label>
         </label>
 
         <label class="form-control w-full">
-          <div class="label">
-            <span class="text-xs font-semibold uppercase tracking-wide"
-              >Password</span
+          <label
+            class="input input-bordered rounded-xl bg-base-100/70 flex items-center gap-2 focus-within:ring-2 focus-within:ring-primary/40 w-full mt-3"
+          >
+            <svg
+              class="h-[1em] opacity-50"
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
             >
-          </div>
-          <input
-            v-model="form.password"
-            id="password"
-            name="password"
-            type="password"
-            class="input input-bordered input-sm rounded-xl bg-base-100/70 focus:outline-none focus:ring-2 focus:ring-primary/40 w-full"
-            autocomplete="current-password"
-            required
-          />
+              <g
+                stroke-linejoin="round"
+                stroke-linecap="round"
+                stroke-width="2.5"
+                fill="none"
+                stroke="currentColor"
+              >
+                <path
+                  d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"
+                ></path>
+                <circle cx="16.5" cy="7.5" r=".5" fill="currentColor"></circle>
+              </g>
+            </svg>
+            <input
+              v-model="form.password"
+              id="password"
+              name="password"
+              type="password"
+              class="grow text-sm"
+              placeholder="Password"
+              autocomplete="current-password"
+              required
+            />
+          </label>
           <div class="label">
             <span class="label-text-alt"></span>
             <button

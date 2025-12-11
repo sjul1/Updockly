@@ -285,6 +285,8 @@ const handleSetupComplete = async () => {
   needsSetup.value = false;
   activePanel.value = "login";
   notify("success", "Setup complete. Please log in.");
+  await checkHealth({ force: true });
+  scheduleHealthPolling();
 };
 
 const checkSetupStatus = async () => {
@@ -312,6 +314,13 @@ const preloadSetupRuntime = async () => {
     const runtime = await api.getSetupRuntimeSettings();
     if (runtime.databaseUrl) {
       settingsForm.databaseUrl = runtime.databaseUrl;
+    }
+    if (runtime.jwtSecret || runtime.vaultKey) {
+      settingsForm.jwtSecret = runtime.jwtSecret;
+      settingsForm.vaultKey = runtime.vaultKey;
+    }
+    if (Array.isArray(runtime.recoveryCodes) && runtime.recoveryCodes.length) {
+      settingsForm.recoveryCodes = runtime.recoveryCodes;
     }
   } catch (error) {
     console.error("Failed to load setup runtime settings", error);

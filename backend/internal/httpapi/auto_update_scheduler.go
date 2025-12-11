@@ -44,6 +44,7 @@ type UpdateCycleStats struct {
 	LocalFailed  int
 	AgentChecked int
 	AgentQueued  int
+	AgentCmdIDs  []string
 }
 
 func (s *Server) runAutoUpdateSchedules(ctx context.Context, lastRun map[string]time.Time) {
@@ -117,13 +118,21 @@ func (s *Server) executeAutoUpdateCycle(ctx context.Context, schedule Schedule, 
 		log.Printf("auto-update: local update pass failed: %v", err)
 	}
 
-	if err := s.enqueueAgentAutoUpdates(ctx, stats); err != nil {
+	agentCmdIDs, err := s.enqueueAgentAutoUpdates(ctx, stats)
+	if err != nil {
 		log.Printf("auto-update: agent command enqueue failed: %v", err)
 	}
 
 	if s.cfg.AutoPruneImages {
 		if err := s.pruneUnusedImages(ctx); err != nil {
 			log.Printf("auto-update: image prune failed: %v", err)
+		}
+	}
+
+	// Wait for agent update commands to finish so the recap and notifications land after actual installs.
+	if len(agentCmdIDs) > 0 {
+		if err := s.waitForAgentCommands(ctx, agentCmdIDs, 12*time.Minute); err != nil {
+			log.Printf("auto-update: waiting for agent commands: %v", err)
 		}
 	}
 
@@ -287,14 +296,16 @@ func (s *Server) pruneUnusedImages(ctx context.Context) error {
 	return nil
 }
 
-func (s *Server) enqueueAgentAutoUpdates(ctx context.Context, stats *UpdateCycleStats) error {
+func (s *Server) enqueueAgentAutoUpdates(ctx context.Context, stats *UpdateCycleStats) ([]string, error) {
 	if s.db == nil {
-		return nil
+		return nil, nil
 	}
+
+	createdCmds := make([]string, 0)
 
 	var agents []Agent
 	if err := s.db.Find(&agents).Error; err != nil {
-		return err
+		return nil, err
 	}
 
 	now := time.Now()
@@ -314,7 +325,7 @@ func (s *Server) enqueueAgentAutoUpdates(ctx context.Context, stats *UpdateCycle
 
 		for _, cont := range containers {
 			if ctx.Err() != nil {
-				return ctx.Err()
+				return createdCmds, ctx.Err()
 			}
 			if !cont.AutoUpdate || strings.TrimSpace(cont.ID) == "" {
 				continue
@@ -328,12 +339,15 @@ func (s *Server) enqueueAgentAutoUpdates(ctx context.Context, stats *UpdateCycle
 				if s.hasAgentCommandForContainer(pending, cont.ID, "update-container") {
 					continue
 				}
-				if _, err := s.createAgentCommandInternal(ag.ID, "update-container", JSONMap{"containerId": cont.ID}); err != nil {
+				cmd, err := s.createAgentCommandInternal(ag.ID, "update-container", JSONMap{"containerId": cont.ID})
+				if err != nil {
 					log.Printf("auto-update: queue update for agent %s/%s failed: %v", ag.Name, cont.ID, err)
 				} else {
 					if stats != nil {
 						stats.AgentQueued++
+						stats.AgentCmdIDs = append(stats.AgentCmdIDs, cmd.ID)
 					}
+					createdCmds = append(createdCmds, cmd.ID)
 				}
 				continue
 			}
@@ -347,7 +361,50 @@ func (s *Server) enqueueAgentAutoUpdates(ctx context.Context, stats *UpdateCycle
 		}
 	}
 
-	return nil
+	return createdCmds, nil
+}
+
+func (s *Server) waitForAgentCommands(ctx context.Context, ids []string, maxWait time.Duration) error {
+	if s.db == nil || len(ids) == 0 {
+		return nil
+	}
+
+	deadline := time.Now().Add(maxWait)
+	if ctx != nil {
+		if dl, ok := ctx.Deadline(); ok && dl.Before(deadline) {
+			deadline = dl
+		}
+	}
+
+	silent := s.db.Session(&gorm.Session{Logger: logger.Discard})
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		if ctx != nil && ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timeout waiting for agent commands to finish")
+		}
+
+		var remaining int64
+		if err := silent.Model(&AgentCommand{}).
+			Where("id IN ? AND status IN ?", ids, []string{"pending", "running"}).
+			Count(&remaining).Error; err != nil {
+			return err
+		}
+		if remaining == 0 {
+			return nil
+		}
+
+		select {
+		case <-ticker.C:
+			continue
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 }
 
 func (s *Server) hasAgentCommandForContainer(cmds []AgentCommand, containerID, cmdType string) bool {

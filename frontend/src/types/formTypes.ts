@@ -88,6 +88,9 @@ export interface SettingsFormState {
   databaseUrl: string;
   clientOrigin: string;
   timezone: string;
+  jwtSecret?: string;
+  vaultKey?: string;
+  recoveryCodes?: string[];
   autoPruneImages: boolean;
   hideSupportButton: boolean;
   backupDestination: BackupDestinationSettings;

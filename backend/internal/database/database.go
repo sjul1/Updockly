@@ -12,6 +12,7 @@ import (
 
 	"updockly/backend/internal/config"
 	"updockly/backend/internal/domain"
+	"updockly/backend/internal/settings"
 )
 
 // Connect opens a GORM database connection and runs migrations.
@@ -48,6 +49,7 @@ func Connect(cfg config.Config) (*gorm.DB, error) {
 		&domain.Agent{},
 		&domain.AgentCommand{},
 		&domain.UpdateHistory{},
+		&settings.Record{},
 	); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
