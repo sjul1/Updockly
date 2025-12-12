@@ -21,6 +21,7 @@ import {
 import { ApiError, api, type UpdateHistory } from "../services/api";
 import { useToast } from "vue-toastification";
 import ConfirmModal from "./ConfirmModal.vue";
+import SectionHeader from "./SectionHeader.vue";
 
 type StatusFilter = "all" | "success" | "warning" | "error";
 type SourceFilter = "all" | "local" | "agent";
@@ -367,86 +368,75 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="space-y-6 w-full">
-    <div
-      class="relative overflow-hidden rounded-3xl border border-base-200 bg-gradient-to-r from-secondary/10 via-primary/10 to-accent/10 p-6 shadow-xl"
+    <SectionHeader
+      title="History"
+      :icon="HistoryIcon"
     >
-      <div
-        class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between"
-      >
-        <div class="space-y-2">
-          <div
-            class="inline-flex items-center gap-2 rounded-full bg-base-100/80 px-3 py-1 text-xs font-semibold shadow"
-          >
-            <Sparkles class="h-4 w-4 text-secondary" />
-            Update history
-          </div>
-          <h1 class="text-3xl font-bold flex items-center gap-2 pr-36 md:pr-0">
-            <HistoryIcon class="w-7 h-7 text-primary" />
-            History
-          </h1>
-          <p class="text-sm text-base-content/70 max-w-2xl">
-            Review every container update across your fleet. Filter by source,
-            status, or search by name.
-          </p>
-          <div class="flex flex-wrap gap-3">
-            <div class="badge badge-success gap-2">
-              <CheckCircle2 class="h-3.5 w-3.5" /> Success: {{ stats.success }}
-            </div>
-            <div class="badge badge-warning gap-2">
-              <AlertCircle class="h-3.5 w-3.5" /> Warnings: {{ stats.warnings }}
-            </div>
-            <div class="badge badge-error gap-2">
-              <AlertCircle class="h-3.5 w-3.5" /> Failed: {{ stats.failed }}
-            </div>
-            <div class="badge badge-primary gap-2">
-              <Server class="h-3.5 w-3.5" /> Agents: {{ stats.agent }}
-            </div>
-            <div class="badge badge-ghost gap-2">
-              <User class="h-3.5 w-3.5" /> Local: {{ stats.local }}
-            </div>
-          </div>
+      <template #eyebrow>
+        <Sparkles class="h-4 w-4 text-secondary" />
+        Update history
+      </template>
+      <template #subtitle>
+        Review every container update across your fleet. Filter by source,
+        status, or search by name.
+      </template>
+      <template #badges>
+        <div class="badge badge-success gap-2">
+          <CheckCircle2 class="h-3.5 w-3.5" /> Success: {{ stats.success }}
         </div>
-        <div class="absolute top-6 right-6 flex flex-col items-end gap-2 md:static md:self-start">
-          <span class="text-xs text-base-content/60">
-            {{
-              lastUpdated
-                ? `Updated ${formatTime(lastUpdated)}`
-                : "Updated --:--:--"
-            }}
-          </span>
-          <div class="flex items-center gap-2">
-            <button
-              class="btn btn-ghost btn-square"
-              @click="fetchHistory"
-              :disabled="loading"
-              aria-label="Refresh history"
-              title="Refresh history"
-            >
-              <RefreshCw class="w-4 h-4" :class="{ 'animate-spin': loading }" />
-            </button>
-            <button
-              type="button"
-              class="badge gap-2 border border-primary/40 cursor-pointer"
-              :class="
-                autoRefreshEnabled
-                  ? 'badge-primary text-primary-content'
-                  : 'badge-ghost text-base-content'
-              "
-              @click="toggleAutoRefresh"
-              :aria-pressed="autoRefreshEnabled"
-              :title="
-                autoRefreshEnabled
-                  ? 'Click to pause auto-refresh'
-                  : 'Click to resume auto-refresh'
-              "
-            >
-              <Sparkles class="h-3.5 w-3.5" />
-              {{ autoRefreshEnabled ? "Live" : "Paused" }}
-            </button>
-          </div>
+        <div class="badge badge-warning gap-2">
+          <AlertCircle class="h-3.5 w-3.5" /> Warnings: {{ stats.warnings }}
         </div>
-      </div>
-    </div>
+        <div class="badge badge-error gap-2">
+          <AlertCircle class="h-3.5 w-3.5" /> Failed: {{ stats.failed }}
+        </div>
+        <div class="badge badge-primary gap-2">
+          <Server class="h-3.5 w-3.5" /> Agents: {{ stats.agent }}
+        </div>
+        <div class="badge badge-ghost gap-2">
+          <User class="h-3.5 w-3.5" /> Local: {{ stats.local }}
+        </div>
+      </template>
+      <template #meta>
+        <span class="text-xs text-base-content/60">
+          {{
+            lastUpdated
+              ? `Updated ${formatTime(lastUpdated)}`
+              : "Updated --:--:--"
+          }}
+        </span>
+      </template>
+      <template #actions>
+        <button
+          class="btn btn-ghost btn-square"
+          @click="fetchHistory"
+          :disabled="loading"
+          aria-label="Refresh history"
+          title="Refresh history"
+        >
+          <RefreshCw class="w-4 h-4" :class="{ 'animate-spin': loading }" />
+        </button>
+        <button
+          type="button"
+          class="badge gap-2 border border-primary/40 cursor-pointer"
+          :class="
+            autoRefreshEnabled
+              ? 'badge-primary text-primary-content'
+              : 'badge-ghost text-base-content'
+          "
+          @click="toggleAutoRefresh"
+          :aria-pressed="autoRefreshEnabled"
+          :title="
+            autoRefreshEnabled
+              ? 'Click to pause auto-refresh'
+              : 'Click to resume auto-refresh'
+          "
+        >
+          <Sparkles class="h-3.5 w-3.5" />
+          {{ autoRefreshEnabled ? "Live" : "Paused" }}
+        </button>
+      </template>
+    </SectionHeader>
 
     <div class="rounded-2xl border border-base-200 shadow-lg bg-base-100">
       <div

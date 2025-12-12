@@ -9,6 +9,7 @@ import {
   Download,
   Mail,
   User,
+  FileText,
 } from "lucide-vue-next";
 import {
   computed,
@@ -21,7 +22,7 @@ import {
   type Ref,
 } from "vue";
 import type { SettingsFormState } from "../types/formTypes";
-import { api, type ApiUser } from "../services/api";
+import { api, type ApiUser, type AuditLog } from "../services/api";
 
 type SectionKey =
   | "runtime"
@@ -29,7 +30,8 @@ type SectionKey =
   | "2fa"
   | "sso"
   | "smtp"
-  | "account";
+  | "account"
+  | "audit";
 
 const props = defineProps<{
   form: SettingsFormState;
@@ -177,6 +179,7 @@ const sectionVisibility = reactive<Record<SectionKey, boolean>>({
   sso: false,
   smtp: false,
   account: false,
+  audit: false,
 });
 
 const appTheme = inject<Ref<string>>("appTheme", ref("light"));
@@ -400,6 +403,29 @@ const submitUserForm = () => {
     newPassword: userForm.newPassword || undefined,
   });
 };
+
+const auditLogs = ref<AuditLog[]>([]);
+const loadingAuditLogs = ref(false);
+
+const fetchAuditLogs = async () => {
+  loadingAuditLogs.value = true;
+  try {
+    auditLogs.value = await api.getAuditLogs(100);
+  } catch (error) {
+    console.error("Failed to load audit logs:", error);
+  } finally {
+    loadingAuditLogs.value = false;
+  }
+};
+
+watch(
+  () => sectionVisibility.audit,
+  (visible) => {
+    if (visible && auditLogs.value.length === 0) {
+      void fetchAuditLogs();
+    }
+  }
+);
 </script>
 
 <template>
@@ -530,6 +556,96 @@ const submitUserForm = () => {
               </p>
             </div>
           </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- APPLICATION LOGS -->
+    <section
+      class="card bg-base-100/80 backdrop-blur border border-base-200/70 shadow-lg"
+    >
+      <div class="card-body space-y-5">
+        <div
+          class="flex items-start justify-between gap-3 cursor-pointer"
+          @click="toggleSection('audit')"
+        >
+          <div class="flex items-start gap-3">
+            <div
+              class="flex h-10 w-10 items-center justify-center rounded-2xl bg-neutral/10 text-neutral"
+            >
+              <FileText class="w-5 h-5" />
+            </div>
+            <div>
+              <h3 class="card-title text-lg">Application Logs</h3>
+              <p class="text-xs text-base-content/70 mt-1">
+                View audit logs for user actions and system events.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="btn btn-ghost btn-xs rounded-full gap-1"
+            tabindex="-1"
+          >
+            <ChevronDown
+              class="w-3 h-3 transition-transform"
+              :class="{ 'rotate-180': sectionVisibility.audit }"
+            />
+            <span class="uppercase text-[0.65rem] tracking-wide">
+              {{ sectionVisibility.audit ? "Collapse" : "Expand" }}
+            </span>
+          </button>
+        </div>
+
+        <div v-show="sectionVisibility.audit" class="space-y-4">
+          <div class="overflow-x-auto rounded-lg border border-base-200 max-h-[400px]">
+            <table class="table table-xs w-full">
+              <thead class="bg-base-200/50 sticky top-0 z-10">
+                <tr>
+                  <th>Time</th>
+                  <th>User</th>
+                  <th>Action</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="loadingAuditLogs">
+                  <td colspan="4" class="text-center py-8">
+                    <span class="loading loading-spinner loading-sm text-primary"></span>
+                  </td>
+                </tr>
+                <tr v-else-if="auditLogs.length === 0">
+                  <td colspan="4" class="text-center text-base-content/50 py-8">
+                    No audit logs available.
+                  </td>
+                </tr>
+                <tr v-else v-for="log in auditLogs" :key="log.id" class="hover:bg-base-200/30">
+                  <td class="font-mono text-base-content/70 whitespace-nowrap">
+                    {{ new Date(log.createdAt).toLocaleString() }}
+                  </td>
+                  <td>
+                    <div class="font-semibold">{{ log.username }}</div>
+                    <div class="text-[0.65rem] text-base-content/50">{{ log.ipAddress }}</div>
+                  </td>
+                  <td>
+                    <div class="badge badge-sm badge-ghost font-mono">{{ log.action }}</div>
+                  </td>
+                  <td class="max-w-[300px] truncate" :title="log.details">
+                    {{ log.details }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="flex justify-end">
+            <button 
+              class="btn btn-ghost btn-xs" 
+              @click="fetchAuditLogs" 
+              :disabled="loadingAuditLogs"
+            >
+              Refresh Logs
+            </button>
+          </div>
         </div>
       </div>
     </section>

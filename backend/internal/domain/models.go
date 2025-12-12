@@ -249,3 +249,13 @@ func (c *AgentCommand) BeforeCreate(*gorm.DB) error {
 	}
 	return nil
 }
+
+type AuditLog struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	UserID    string    `json:"userId"`
+	UserName  string    `json:"username"`
+	Action    string    `json:"action"`
+	Details   string    `json:"details"`
+	IPAddress string    `json:"ipAddress"`
+	CreatedAt time.Time `json:"createdAt"`
+}

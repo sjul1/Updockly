@@ -23,7 +23,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 
 func TestStoreLoadEmptyDoesNotError(t *testing.T) {
 	db := setupTestDB(t)
-	store := NewStore(db)
+	store := NewStore(db, nil)
 
 	_, found, err := store.Load()
 	if err != nil {
@@ -36,7 +36,7 @@ func TestStoreLoadEmptyDoesNotError(t *testing.T) {
 
 func TestStoreSaveStripsEnvBackedFields(t *testing.T) {
 	db := setupTestDB(t)
-	store := NewStore(db)
+	store := NewStore(db, nil)
 
 	settings := config.RuntimeSettings{
 		DatabaseURL:  "postgres://should-not-persist",

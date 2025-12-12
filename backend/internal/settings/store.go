@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"updockly/backend/internal/config"
+	"updockly/backend/internal/vault"
 )
 
 // Record stores runtime settings in the database so they survive container restarts.
@@ -20,11 +21,12 @@ type Record struct {
 }
 
 type Store struct {
-	db *gorm.DB
+	db    *gorm.DB
+	vault *vault.Vault
 }
 
-func NewStore(db *gorm.DB) *Store {
-	return &Store{db: db}
+func NewStore(db *gorm.DB, vault *vault.Vault) *Store {
+	return &Store{db: db, vault: vault}
 }
 
 // Load returns the stored settings. The boolean indicates whether a record was found.
@@ -41,7 +43,27 @@ func (s *Store) Load() (config.RuntimeSettings, bool, error) {
 	if err != nil {
 		return config.RuntimeSettings{}, false, err
 	}
-	return rec.Data, true, nil
+
+	data := rec.Data
+	if s.vault != nil {
+		if data.Notifications.DiscordToken != "" {
+			if v, err := s.vault.Decrypt(data.Notifications.DiscordToken); err == nil {
+				data.Notifications.DiscordToken = v
+			}
+		}
+		if data.Notifications.SMTP.Password != "" {
+			if v, err := s.vault.Decrypt(data.Notifications.SMTP.Password); err == nil {
+				data.Notifications.SMTP.Password = v
+			}
+		}
+		if data.SSO.ClientSecret != "" {
+			if v, err := s.vault.Decrypt(data.SSO.ClientSecret); err == nil {
+				data.SSO.ClientSecret = v
+			}
+		}
+	}
+
+	return data, true, nil
 }
 
 // Save upserts the provided settings and returns what was stored.
@@ -49,9 +71,29 @@ func (s *Store) Save(settings config.RuntimeSettings) (config.RuntimeSettings, e
 	if s == nil || s.db == nil {
 		return config.RuntimeSettings{}, errors.New("settings store not initialized")
 	}
+
+	stripped := stripEnvBackedFields(settings)
+	if s.vault != nil {
+		if stripped.Notifications.DiscordToken != "" {
+			if v, err := s.vault.Encrypt(stripped.Notifications.DiscordToken); err == nil {
+				stripped.Notifications.DiscordToken = v
+			}
+		}
+		if stripped.Notifications.SMTP.Password != "" {
+			if v, err := s.vault.Encrypt(stripped.Notifications.SMTP.Password); err == nil {
+				stripped.Notifications.SMTP.Password = v
+			}
+		}
+		if stripped.SSO.ClientSecret != "" {
+			if v, err := s.vault.Encrypt(stripped.SSO.ClientSecret); err == nil {
+				stripped.SSO.ClientSecret = v
+			}
+		}
+	}
+
 	rec := Record{
 		ID:   1,
-		Data: stripEnvBackedFields(settings),
+		Data: stripped,
 	}
 	if err := s.db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "id"}},
@@ -59,7 +101,8 @@ func (s *Store) Save(settings config.RuntimeSettings) (config.RuntimeSettings, e
 	}).Create(&rec).Error; err != nil {
 		return config.RuntimeSettings{}, err
 	}
-	return rec.Data, nil
+	// Return the original settings (unencrypted) to the caller so they can use them immediately
+	return stripEnvBackedFields(settings), nil
 }
 
 // stripEnvBackedFields removes values that should only be sourced from .env.

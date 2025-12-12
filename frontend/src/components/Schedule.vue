@@ -9,6 +9,7 @@ import {
 } from "vue";
 import { api, type Schedule } from "../services/api";
 import ConfirmModal from "./ConfirmModal.vue";
+import SectionHeader from "./SectionHeader.vue";
 import {
   CalendarClock,
   PlusCircle,
@@ -544,71 +545,62 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="space-y-6">
-    <div
-      class="relative overflow-hidden rounded-3xl border border-base-200 bg-gradient-to-r from-secondary/15 via-primary/10 to-accent/10 p-6 shadow-xl"
+    <SectionHeader
+      title="Scheduled Updates"
     >
-      <div
-        class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between"
-      >
-        <div class="space-y-2">
-          <div
-            class="inline-flex items-center gap-2 rounded-full bg-base-100/80 px-3 py-1 text-xs font-semibold shadow"
-          >
-            <CalendarClock class="h-4 w-4 text-secondary" />
-            Schedules
-          </div>
-          <h1 class="text-3xl font-bold pr-36 md:pr-0">Scheduled Updates</h1>
-          <p class="text-sm text-base-content/70 max-w-2xl">
-            Coordinate update windows and keep your auto-update fleet
-            predictable.
-          </p>
-          <div class="flex flex-wrap gap-3">
-            <div class="badge badge-info gap-2">
-              <Shield class="h-3.5 w-3.5" /> Auto-update targets:
-              {{ autoUpdateCount }}
-            </div>
-          </div>
+      <template #eyebrow>
+        <CalendarClock class="h-4 w-4 text-secondary" />
+        Schedules
+      </template>
+      <template #subtitle>
+        Coordinate update windows and keep your auto-update fleet
+        predictable.
+      </template>
+      <template #badges>
+        <div class="badge badge-info gap-2">
+          <Shield class="h-3.5 w-3.5" /> Auto-update targets:
+          {{ autoUpdateCount }}
         </div>
-        <div class="absolute top-6 right-6 flex flex-col items-end gap-2 md:static md:self-start">
-          <span class="text-xs text-base-content/60">
-            {{
-              lastUpdated
-                ? `Updated ${formatTime(lastUpdated)}`
-                : "Updated --:--:--"
-            }}
-          </span>
-          <div class="flex items-center gap-2">
-            <button
-              class="btn btn-ghost btn-square"
-              @click="fetchSchedules"
-              :disabled="loading"
-              aria-label="Refresh schedules"
-              title="Refresh schedules"
-            >
-              <RefreshCw class="w-4 h-4" :class="{ 'animate-spin': loading }" />
-            </button>
-            <div
-              class="badge gap-2 border border-primary/40 cursor-pointer"
-              :class="
-                autoRefreshEnabled
-                  ? 'badge-primary text-primary-content'
-                  : 'badge-ghost text-base-content'
-              "
-              @click="toggleAutoRefresh"
-              :aria-pressed="autoRefreshEnabled"
-              :title="
-                autoRefreshEnabled
-                  ? 'Click to pause auto-refresh'
-                  : 'Click to resume auto-refresh'
-              "
-            >
-              <Sparkles class="h-3.5 w-3.5" />
-              {{ autoRefreshEnabled ? "Live" : "Paused" }}
-            </div>
-          </div>
+      </template>
+      <template #meta>
+        <span class="text-xs text-base-content/60">
+          {{
+            lastUpdated
+              ? `Updated ${formatTime(lastUpdated)}`
+              : "Updated --:--:--"
+          }}
+        </span>
+      </template>
+      <template #actions>
+        <button
+          class="btn btn-ghost btn-square"
+          @click="fetchSchedules"
+          :disabled="loading"
+          aria-label="Refresh schedules"
+          title="Refresh schedules"
+        >
+          <RefreshCw class="w-4 h-4" :class="{ 'animate-spin': loading }" />
+        </button>
+        <div
+          class="badge gap-2 border border-primary/40 cursor-pointer"
+          :class="
+            autoRefreshEnabled
+              ? 'badge-primary text-primary-content'
+              : 'badge-ghost text-base-content'
+          "
+          @click="toggleAutoRefresh"
+          :aria-pressed="autoRefreshEnabled"
+          :title="
+            autoRefreshEnabled
+              ? 'Click to pause auto-refresh'
+              : 'Click to resume auto-refresh'
+          "
+        >
+          <Sparkles class="h-3.5 w-3.5" />
+          {{ autoRefreshEnabled ? "Live" : "Paused" }}
         </div>
-      </div>
-    </div>
+      </template>
+    </SectionHeader>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
       <div class="lg:col-span-5">

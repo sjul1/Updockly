@@ -29,6 +29,7 @@ import {
 import { useToast } from "vue-toastification";
 import { api, type Agent, type AgentWithToken } from "../services/api";
 import ConfirmModal from "./ConfirmModal.vue";
+import SectionHeader from "./SectionHeader.vue";
 
 const agents = ref<Agent[]>([]);
 const loading = ref(false);
@@ -403,74 +404,60 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="space-y-6">
-    <div
-      class="relative overflow-hidden rounded-3xl border border-base-200 bg-gradient-to-br from-primary/10 via-primary/5 to-secondary/5 shadow-xl"
+    <SectionHeader
+      title="Remote agent fleet"
+      :icon="ServerCog"
     >
-      <div class="absolute inset-0 bg-grid-primary/5 opacity-60"></div>
-      <div
-        class="relative flex flex-col gap-4 p-6 md:flex-row md:items-start md:justify-between"
-      >
-        <div class="space-y-2">
-          <div
-            class="inline-flex items-center gap-2 rounded-full bg-base-100/70 px-3 py-1 text-xs font-semibold shadow-sm"
-          >
-            <ServerCog class="h-4 w-4 text-primary" />
-            Agents
-          </div>
-          <h2 class="text-2xl font-bold leading-tight pr-36 md:pr-0">
-            Remote agent fleet
-          </h2>
-          <p class="text-sm text-base-content/70 max-w-2xl">
-            Register lightweight agents to report Docker state from remote
-            hosts.
-          </p>
-          <div class="flex flex-wrap gap-3 text-sm text-base-content/70">
-            <span class="badge badge-primary badge-outline gap-2">
-              <ShieldCheck class="h-3.5 w-3.5" />
-              {{ onlineAgents }} online
-            </span>
-            <span class="badge badge-outline gap-2">
-              <ServerCog class="h-3.5 w-3.5" />
-              {{ totalAgents }} total
-            </span>
-          </div>
-        </div>
-        <div
-          class="absolute top-6 right-6 flex flex-col items-end gap-2 md:static"
+      <template #eyebrow>
+        <ServerCog class="h-4 w-4 text-primary" />
+        Agents
+      </template>
+      <template #subtitle>
+        Register lightweight agents to report Docker state from remote hosts.
+      </template>
+      <template #badges>
+        <span class="badge badge-primary badge-outline gap-2">
+          <ShieldCheck class="h-3.5 w-3.5" />
+          {{ onlineAgents }} online
+        </span>
+        <span class="badge badge-outline gap-2">
+          <ServerCog class="h-3.5 w-3.5" />
+          {{ totalAgents }} total
+        </span>
+      </template>
+      <template #meta>
+        <span class="text-xs text-base-content/60">
+          {{
+            lastUpdated
+              ? `Updated ${formatTime(lastUpdated)}`
+              : "Updated --:--:--"
+          }}
+        </span>
+      </template>
+      <template #actions>
+        <button
+          class="btn btn-ghost btn-square"
+          @click="loadAgents({ silent: false })"
+          :disabled="loading"
+          title="Refresh agents"
         >
-          <span class="text-xs text-base-content/60">
-            {{
-              lastUpdated
-                ? `Updated ${formatTime(lastUpdated)}`
-                : "Updated --:--:--"
-            }}
-          </span>
-          <div class="flex items-center gap-2">
-            <button
-              class="btn btn-ghost btn-square"
-              @click="loadAgents({ silent: false })"
-              :disabled="loading"
-              title="Refresh agents"
-            >
-              <RefreshCw class="w-4 h-4" :class="{ 'animate-spin': loading }" />
-            </button>
-            <button
-              type="button"
-              class="badge gap-2 border border-primary/40 cursor-pointer"
-              :class="
-                autoRefreshEnabled
-                  ? 'badge-primary text-primary-content'
-                  : 'badge-ghost text-base-content'
-              "
-              @click="toggleAutoRefresh"
-            >
-              <Sparkles class="h-3.5 w-3.5" />
-              {{ autoRefreshEnabled ? "Live" : "Paused" }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+          <RefreshCw class="w-4 h-4" :class="{ 'animate-spin': loading }" />
+        </button>
+        <button
+          type="button"
+          class="badge gap-2 border border-primary/40 cursor-pointer"
+          :class="
+            autoRefreshEnabled
+              ? 'badge-primary text-primary-content'
+              : 'badge-ghost text-base-content'
+          "
+          @click="toggleAutoRefresh"
+        >
+          <Sparkles class="h-3.5 w-3.5" />
+          {{ autoRefreshEnabled ? "Live" : "Paused" }}
+        </button>
+      </template>
+    </SectionHeader>
 
     <div class="space-y-6">
       <div class="rounded-3xl border border-base-200 bg-base-100 p-6 shadow-xl relative overflow-hidden">
@@ -738,17 +725,20 @@ onBeforeUnmount(() => {
                       </div>
                     </td>
                     <td class="text-sm">
-                      <span
-                        class="badge gap-2 text-xs"
-                        :class="agent.tokenBound ? 'badge-success' : 'badge-warning'"
-                        :title="agent.tokenBound ? 'Token bound to first IP seen' : 'Token not yet bound to IP'"
-                      >
-                        <span
-                          class="inline-flex h-2 w-2 rounded-full"
-                          :class="agent.tokenBound ? 'bg-success' : 'bg-warning'"
-                        ></span>
-                        {{ agent.tokenBound ? "IP-bound" : "Not bound" }}
-                      </span>
+                      <div class="flex items-center gap-2">
+                        <template v-if="agent.tokenBound">
+                          <CheckCircle2 class="w-4 h-4 text-success" />
+                          <span class="text-xs text-base-content/70">
+                            IP-bound
+                          </span>
+                        </template>
+                        <template v-else>
+                          <AlertTriangle class="w-4 h-4 text-warning" />
+                          <span class="text-xs text-base-content/70">
+                            Not bound
+                          </span>
+                        </template>
+                      </div>
                     </td>
                     <td class="text-sm text-base-content/70">
                       <div class="flex flex-col">
@@ -927,12 +917,16 @@ onBeforeUnmount(() => {
                             agent.tlsEnabled ? "TLS enabled" : "TLS off"
                           }}</span>
                         </div>
-                        <span
-                          class="badge gap-2 text-[10px]"
-                          :class="agent.tokenBound ? 'badge-success' : 'badge-warning'"
-                        >
-                          {{ agent.tokenBound ? "IP-bound" : "Not bound" }}
-                        </span>
+                        <div class="flex items-center gap-1 text-[10px]">
+                          <template v-if="agent.tokenBound">
+                            <CheckCircle2 class="w-3 h-3 text-success" />
+                            <span>IP-bound</span>
+                          </template>
+                          <template v-else>
+                            <AlertTriangle class="w-3 h-3 text-warning" />
+                            <span>Not bound</span>
+                          </template>
+                        </div>
                         <label class="flex items-center gap-2 ml-auto">
                           <span
                             class="text-[10px] uppercase tracking-wide text-base-content/60"

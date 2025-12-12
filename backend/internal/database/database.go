@@ -49,6 +49,8 @@ func Connect(cfg config.Config) (*gorm.DB, error) {
 		&domain.Agent{},
 		&domain.AgentCommand{},
 		&domain.UpdateHistory{},
+		&domain.RunningSnapshot{},
+		&domain.AuditLog{},
 		&settings.Record{},
 	); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)

@@ -818,6 +818,11 @@ func (s *Server) updateSettings(c *gin.Context) {
 	}
 
 	s.applyRuntimeSettings(updated)
+
+	if claims := getClaims(c); claims != nil {
+		_ = s.auditService.Record(claims.Subject, claims.Name, "update-settings", "Updated runtime settings", c.ClientIP())
+	}
+
 	c.JSON(http.StatusOK, updated)
 }
 
@@ -1071,6 +1076,11 @@ func (s *Server) createAgentHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create agent"})
 		return
 	}
+
+	if claims := getClaims(c); claims != nil {
+		_ = s.auditService.Record(claims.Subject, claims.Name, "create-agent", fmt.Sprintf("Created agent: %s", agent.Name), c.ClientIP())
+	}
+
 	c.JSON(http.StatusCreated, toAgentResponse(*agent, true))
 }
 
@@ -1110,6 +1120,10 @@ func (s *Server) updateAgentHandler(c *gin.Context) {
 		return
 	}
 
+	if claims := getClaims(c); claims != nil {
+		_ = s.auditService.Record(claims.Subject, claims.Name, "update-agent", fmt.Sprintf("Updated agent: %s", agent.Name), c.ClientIP())
+	}
+
 	c.JSON(http.StatusOK, toAgentResponse(*agent, false))
 }
 
@@ -1138,10 +1152,20 @@ func (s *Server) deleteScheduleHandler(c *gin.Context) {
 
 func (s *Server) deleteAgentHandler(c *gin.Context) {
 	id := c.Param("id")
+	agent, _ := s.agentService.Get(id) // Get agent name before deletion for log
 	if err := s.agentService.Delete(id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete agent"})
 		return
 	}
+
+	if claims := getClaims(c); claims != nil {
+		name := id
+		if agent != nil {
+			name = agent.Name
+		}
+		_ = s.auditService.Record(claims.Subject, claims.Name, "delete-agent", fmt.Sprintf("Deleted agent: %s", name), c.ClientIP())
+	}
+
 	c.Status(http.StatusNoContent)
 }
 

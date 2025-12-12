@@ -165,6 +165,16 @@ export interface AgentCommand {
   createdAt?: string;
 }
 
+export interface AuditLog {
+  id: number;
+  userId: string;
+  username: string;
+  action: string;
+  details: string;
+  ipAddress: string;
+  createdAt: string;
+}
+
 async function request<T>(
   endpoint: string,
   options: RequestInit = {},
@@ -177,10 +187,21 @@ async function request<T>(
     throw new ApiError("Backend offline", 503);
   }
 
+  const getCookie = (name: string) => {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop()?.split(";").shift();
+  };
+
   const headers: HeadersInit = {
     "Content-Type": "application/json",
     ...options.headers,
   } as HeadersInit;
+
+  const csrfToken = getCookie("csrf_token");
+  if (csrfToken) {
+    (headers as Record<string, string>)["X-CSRF-Token"] = csrfToken;
+  }
 
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
@@ -466,6 +487,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ databaseUrl }),
     }),
+
+  getAuditLogs: (limit = 100) => request<AuditLog[]>(`/audit-logs?limit=${limit}`),
 
   getSettings: () => request<SettingsFormState>("/settings"),
 

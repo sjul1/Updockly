@@ -22,10 +22,12 @@ import (
 	"gorm.io/gorm"
 
 	"updockly/backend/internal/agents"
+	"updockly/backend/internal/audit"
 	"updockly/backend/internal/auth"
 	"updockly/backend/internal/certs"
 	"updockly/backend/internal/config"
 	"updockly/backend/internal/containers"
+	"updockly/backend/internal/domain"
 	"updockly/backend/internal/history"
 	"updockly/backend/internal/logging"
 	"updockly/backend/internal/metrics"
@@ -52,6 +54,7 @@ type Server struct {
 
 	agentService     *agents.AgentService
 	authService      *auth.AuthService
+	auditService     *audit.Service
 	containerService *containers.ContainerService
 	certManager      *certs.CertManager
 
@@ -128,13 +131,13 @@ func New(cfg config.Config, db *gorm.DB) (*Server, error) {
 		offlineNotified:  make(map[string]bool),
 		agentService:     agents.NewAgentService(db, cfg.AgentRequireIPBinding),
 		authService:      auth.NewAuthService(db, vaultSvc, cfg.JWTSecret, cfg.SecretKey, cfg.JWTSecretPrevious),
+		auditService:     audit.NewService(db),
 		containerService: containers.NewContainerService(db),
 		certManager:      certManager,
 		loginAttempts:    make(map[string]loginAttempt),
 		historyService:   history.NewService(db),
 		metricsService:   metrics.NewService(db, loc),
-		settingsStore:    settings.NewStore(db),
-	}
+							settingsStore:    settings.NewStore(db, vaultSvc),	}
 
 	srv.configureMiddleware()
 	srv.registerRoutes()
@@ -184,6 +187,8 @@ func (s *Server) configureMiddleware() {
 		c.Header("X-Content-Type-Options", "nosniff")
 		c.Next()
 	})
+
+	s.router.Use(s.csrfMiddleware())
 }
 
 func (s *Server) registerRoutes() {
@@ -245,6 +250,7 @@ func (s *Server) registerRoutes() {
 
 		api.GET("/settings", s.getSettings)
 		api.PUT("/settings", s.updateSettings)
+		api.GET("/audit-logs", s.listAuditLogs)
 		api.POST("/notifications/test", s.testNotificationHandler)
 		api.POST("/notifications/test-email", s.testEmailHandler)
 		api.GET("/agents", s.listAgentsHandler)
@@ -536,15 +542,17 @@ func (s *Server) applyRuntimeSettings(runtimeSettings config.RuntimeSettings) {
 					&AgentCommand{},
 					&UpdateHistory{},
 					&RunningSnapshot{},
+					&domain.AuditLog{},
 					&settings.Record{},
 				); err == nil {
 					s.db = db
 					s.agentService = agents.NewAgentService(db, s.cfg.AgentRequireIPBinding)
 					s.authService = auth.NewAuthService(db, s.vault, s.cfg.JWTSecret, s.cfg.SecretKey, s.cfg.JWTSecretPrevious)
+					s.auditService = audit.NewService(db)
 					s.containerService = containers.NewContainerService(db)
 					s.historyService = history.NewService(db)
 					s.metricsService = metrics.NewService(db, s.timezone)
-					s.settingsStore = settings.NewStore(db)
+					s.settingsStore = settings.NewStore(db, s.vault)
 					s.reencryptVaultSecrets()
 				}
 			}
