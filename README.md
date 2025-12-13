@@ -18,9 +18,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/sjul1/Updockly/wiki/1.-Setup">Quick Start</a> •
+  <a href="https://github.com/sjul1/Updockly/wiki/Setup">Quick Start</a> •
   <a href="https://github.com/sjul1/Updockly/wiki">Documentation</a> •
-  <a href="https://github.com/sjul1/Updockly/wiki/2.-Agent-Deployment">Agent Deployment</a> •
+  <a href="https://github.com/sjul1/Updockly/wiki/Agent-Deployment">Agent Deployment</a> •
   <a href="https://github.com/sjul1/Updockly/issues">Issues</a>
 </p>
 
@@ -70,7 +70,7 @@
 
 4. Complete the setup wizard to create the admin account.
 
-👉 Full guide: <a href="https://github.com/sjul1/Updockly/wiki/1.-Setup">Quick Start</a>
+👉 Full guide: <a href="https://github.com/sjul1/Updockly/wiki/Setup">Quick Start</a>
 
 ---
 
@@ -195,7 +195,7 @@ Most variables support appending `_FILE` to the name to read the value from a fi
 
 Agents let you manage containers on remote Docker hosts from a single Updockly UI.
 
-👉 Guide: <a href="https://github.com/sjul1/Updockly/wiki/2.-Agent-Deployment">Agents Deployment</a>
+👉 Guide: <a href="https://github.com/sjul1/Updockly/wiki/Agent-Deployment">Agent Deployment</a>
 
 ---
 
