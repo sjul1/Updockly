@@ -15,7 +15,6 @@
   <img alt="Vue 3" src="https://img.shields.io/badge/Vue-3-42b883.svg?logo=vuedotjs&logoColor=white">
   <img alt="Docker supported" src="https://img.shields.io/badge/Docker-Supported-2496ED.svg?logo=docker&logoColor=white">
   <a href="https://hub.docker.com/r/sjul/updockly"><img alt="Docker pulls (frontend)" src="https://img.shields.io/docker/pulls/sjul/updockly"></a>
-  <a href="https://hub.docker.com/r/sjul/updockly-api"><img alt="Docker pulls (backend)" src="https://img.shields.io/docker/pulls/sjul/updockly-api"></a>
 </p>
 
 <p align="center">
@@ -69,7 +68,7 @@
 
 4. Complete the setup wizard to create the admin account.
 
-👉 Full guide: https://github.com/sjul1/Updockly/wiki/1.-Setup
+👉 Full guide: <a href="https://github.com/sjul1/Updockly/wiki/1.-Setup">Quick Start</a>
 
 ---
 
@@ -193,7 +192,7 @@ Most variables support appending `_FILE` to the name to read the value from a fi
 
 Agents let you manage containers on remote Docker hosts from a single Updockly UI.
 
-👉 Guide: https://github.com/sjul1/Updockly/wiki/2.-Agent-Deployment
+👉 Guide: <a href="https://github.com/sjul1/Updockly/wiki/2.-Agent-Deployment">Agents Deployment</a>
 
 ---
 
