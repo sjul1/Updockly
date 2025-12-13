@@ -40,3 +40,4 @@ CMD ["nginx", "-g", "daemon off;"]
 EXPOSE 8080 8443
 
 ENV SERVER_ADDR=:5000
+ENV BACKEND_HOST=updockly-backend

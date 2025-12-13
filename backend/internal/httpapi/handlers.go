@@ -978,9 +978,7 @@ func (s *Server) ssoCallbackHandler(c *gin.Context) {
 	// Check if user exists (case-insensitive lookup)
 	account, err := s.authService.FindAccountForSSO(identifier)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		clientOrigin := strings.TrimSuffix(s.cfg.ClientOrigin, "/")
-		redirectURL := fmt.Sprintf("%s/login?error=User+not+authorized", clientOrigin)
-		c.Redirect(http.StatusFound, redirectURL)
+		c.Redirect(http.StatusFound, s.absoluteClientURL("/?error=User+not+authorized"))
 		return
 	} else if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
@@ -992,12 +990,7 @@ func (s *Server) ssoCallbackHandler(c *gin.Context) {
 		return
 	}
 
-	clientOrigin := strings.TrimSuffix(s.cfg.ClientOrigin, "/")
-	if clientOrigin == "" {
-		clientOrigin = "/"
-	}
-	redirectURL := fmt.Sprintf("%s/auth/callback", clientOrigin)
-	c.Redirect(http.StatusFound, redirectURL)
+	c.Redirect(http.StatusFound, s.absoluteClientURL("/"))
 }
 
 type agentPayload struct {

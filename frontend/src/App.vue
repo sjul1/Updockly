@@ -76,6 +76,7 @@ const HEALTH_CHECK_INTERVAL_MS = 30000;
 const dataPollTimer = ref<number | null>(null);
 const DATA_POLL_INTERVAL_MS = 30000;
 const currentUser = ref<ApiUser | null>(null);
+const isLoggingOut = ref(false);
 const tempToken = ref("");
 const twoFactorRequired = ref(false);
 const needsSetup = ref(false);
@@ -440,13 +441,28 @@ const loadAllData = async () => {
   }
 };
 
-const logout = () => {
-  api.logout().catch(() => {});
+const logout = async () => {
+  if (isLoggingOut.value) return;
+  isLoggingOut.value = true;
+
+  stopHealthPolling();
+  stopDataPolling();
+
+  const preservedSSO = { ...settingsForm.sso };
   currentUser.value = null;
   dashboard.value = null;
   hydrateSettings(createDefaultSettings());
+  settingsForm.sso.enabled = preservedSSO.enabled;
+  settingsForm.sso.provider = preservedSSO.provider;
   activePanel.value = "login";
-  window.location.reload();
+
+  try {
+    await api.logout({ keepalive: true });
+  } catch {
+    // Ignore network/CSRF issues; state already cleared client-side.
+  } finally {
+    isLoggingOut.value = false;
+  }
 };
 
 const handleLogin = async (payload: { username: string; password: string }) => {

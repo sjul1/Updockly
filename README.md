@@ -55,6 +55,8 @@
    cp .env.example .env
    ```
 
+   If you change the backend service name in `docker-compose.yml`, also set `BACKEND_HOST` to match (default: `updockly-backend`).
+
 2. Start Updockly:
 
    ```bash
@@ -114,7 +116,7 @@ Updockly is configured using environment variables. You can set these in your `.
 - **Web UI Settings**: Database, timezone, certificates, and more.
 - **`.env` Config**: Full environment variable control.
 
-**Env-only keys**: `DATABASE_URL`, `JWT_SECRET`, `VAULT_KEY`, `CLIENT_ORIGIN`, `SERVER_ADDR`.
+**Env-only keys**: `DATABASE_URL`, `JWT_SECRET`, `VAULT_KEY`, `CLIENT_ORIGIN`, `SERVER_ADDR`, `BACKEND_HOST`.
 These must be provided via environment/.env and are not editable in the UI.
 
 **Runtime settings**: Everything else (timezone, notifications, SMTP, SSO, UI toggles, agent/runtime flags) is stored in the database.
@@ -138,6 +140,7 @@ Example env file: `.env.example`
 | `VAULT_KEY`                | **Important.** Vault encryption key for 2FA secrets (generated on first boot if missing).  | (auto-generated)                                        |
 | `CLIENT_ORIGIN`            | The URL where the frontend is accessible. Used for CORS and redirects.                     | `http://localhost:5174`                                 |
 | `SERVER_ADDR`              | The address and port the backend server listens on.                                        | `:5000`                                                 |
+| `BACKEND_HOST`             | Docker DNS name of the backend service (used by the frontend Nginx proxy).                 | `updockly-backend`                                      |
 | `TIMEZONE`                 | Timezone used for scheduling and logging (e.g., `Europe/Paris`).                           | `UTC`                                                   |
 | `AUTO_PRUNE_IMAGES`        | Automatically clean unused Docker images after updates (`true`/`false`).                   | `false`                                                 |
 | `SERVER_SAN_IPS`           | Comma-separated list of IP addresses to add to the self-signed certificate.                | `127.0.0.1,0.0.0.0`                                     |

@@ -480,7 +480,8 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
-  logout: () => request<{ message: string }>("/auth/logout", { method: "POST" }),
+  logout: (options: RequestInit = {}) =>
+    request<{ message: string }>("/auth/logout", { ...options, method: "POST" }),
 
   setupTestDb: (databaseUrl: string) =>
     request<unknown>("/auth/setup/test-db", {
