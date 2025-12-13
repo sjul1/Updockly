@@ -48,7 +48,7 @@ const mountModal = (options?: {
 
 describe("ConfirmModal", () => {
   it("renders labels and emits confirm/cancel from buttons", async () => {
-    const { root, confirmSpy, cancelSpy, unmount } = mountModal({
+    const { confirmSpy, cancelSpy, unmount } = mountModal({
       confirmLabel: "Remove",
       cancelLabel: "Back",
     });
