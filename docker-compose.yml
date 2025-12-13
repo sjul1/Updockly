@@ -1,5 +1,5 @@
 services:
-  backend:
+  updockly-backend:
     image: sjul/updockly-api:latest
     restart: unless-stopped
     container_name: updockly-backend
@@ -13,7 +13,7 @@ services:
     env_file:
       - .env
 
-  frontend:
+  updockly-frontend:
     image: sjul/updockly:latest
     restart: unless-stopped
     container_name: updockly-frontend

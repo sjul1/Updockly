@@ -1,30 +1,75 @@
-# Updockly
+<p align="center">
+  <img src="docs/assets/logo.png" alt="Updockly logo" width="120">
+</p>
 
-![GPLv3 License](https://img.shields.io/badge/License-GPLv3-blue.svg) ![Go Badge](https://img.shields.io/badge/Go-1.25+-00ADD8.svg?logo=go&logoColor=white) ![Vue Badge](https://img.shields.io/badge/Vue-3-42b883.svg?logo=vuedotjs&logoColor=white) ![Docker Badge](https://img.shields.io/badge/Docker-Supported-2496ED.svg?logo=docker&logoColor=white)
+<h1 align="center">Updockly</h1>
 
-A robust, self-hosted Docker container management platform featuring a **Go** backend and a **Vue 3** frontend.
-**Updockly** provides a unified dashboard to monitor, manage, and auto-update containers across multiple hosts via lightweight agents.
+<p align="center">
+  Self-hosted Docker container management with a modern UI, multi-host agents, and scheduled auto-updates.
+</p>
+
+<p align="center">
+  <a href="./LICENSE"><img alt="License: GPLv3" src="https://img.shields.io/badge/License-GPLv3-blue.svg"></a>
+  <a href="https://github.com/sjul1/Updockly/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/sjul1/Updockly/actions/workflows/ci.yml/badge.svg"></a>
+  <img alt="Go 1.25+" src="https://img.shields.io/badge/Go-1.25+-00ADD8.svg?logo=go&logoColor=white">
+  <img alt="Vue 3" src="https://img.shields.io/badge/Vue-3-42b883.svg?logo=vuedotjs&logoColor=white">
+  <img alt="Docker supported" src="https://img.shields.io/badge/Docker-Supported-2496ED.svg?logo=docker&logoColor=white">
+  <a href="https://hub.docker.com/r/sjul/updockly"><img alt="Docker pulls (frontend)" src="https://img.shields.io/docker/pulls/sjul/updockly"></a>
+  <a href="https://hub.docker.com/r/sjul/updockly-api"><img alt="Docker pulls (backend)" src="https://img.shields.io/docker/pulls/sjul/updockly-api"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/sjul1/Updockly/wiki/1.-Setup">Quick Start</a> •
+  <a href="https://github.com/sjul1/Updockly/wiki">Documentation</a> •
+  <a href="https://github.com/sjul1/Updockly/wiki/2.-Agent-Deployment">Agent Deployment</a> •
+  <a href="https://github.com/sjul1/Updockly/issues">Issues</a>
+</p>
 
 <p align="center">
   <img src="docs/screenshots/dashboard.png" alt="Updockly Dashboard" width="80%">
 </p>
 
-This marks my first open-source release on GitHub. I have always learned by myself through private projects, but I am fully committed to refining and perfecting this codebase. I welcome all feedback and recommendations - constructive criticism and advice are highly appreciated!
-
 ---
 
 ## ✨ Key Features
 
-- 🛡️ **Secure by Design**: Login with JWT, optional 2FA (TOTP), and OIDC SSO.
-- 🐳 **Multi-Host Management**: Control containers on the main server and remote hosts via agents.
-- 🔄 **Automatic Updates & Rollbacks**: Scheduled image pulls, safe recreation, and one-click rollback.
-- 📈 **Live Monitoring**: Real-time container status.
-- ⚙️ **Configurable & Self-Hosted**: TLS support, runtime configuration, and `.env`-based settings.
+- 🛡️ **Security & Auth**: JWT sessions, optional 2FA (TOTP), and OIDC SSO.
+- 🐳 **Multi-host**: Manage local Docker + remote Docker hosts via agents.
+- 🔄 **Auto-updates**: Scheduled image pulls, safe recreation, and rollback.
+- 📈 **Monitoring**: Real-time container status, logs, and history.
+- ⚙️ **Self-hosted**: `.env` configuration, runtime settings in DB, and optional TLS for agents.
 
 <p align="center">
   <img src="docs/screenshots/containers.png" alt="Containers Screenshot" width="45%">
   <img src="docs/screenshots/agents.png" alt="Agents Screenshot" width="45%">
 </p>
+
+---
+
+## 🚀 Quick Start (Docker Compose)
+
+**Prerequisites**: Docker + Docker Compose.
+
+1. Copy the example env file:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Start Updockly:
+
+   ```bash
+   docker compose up -d
+   ```
+
+3. Open the UI:
+
+   - `http://localhost:5174` (HTTP)
+   - `https://localhost:5175` (HTTPS, self-signed)
+
+4. Complete the setup wizard to create the admin account.
+
+👉 Full guide: https://github.com/sjul1/Updockly/wiki/1.-Setup
 
 ---
 
@@ -45,7 +90,7 @@ This marks my first open-source release on GitHub. I have always learned by myse
 ## 🐳 Container Management
 
 - **Multi-Host Support**: Control local and remote Docker hosts.
-- **Remote Agents**: Lightweight Go agent with encrypted TLS communication.
+- **Remote Agents**: Lightweight Go agent with TLS communication.
 - **Live Monitoring**: Real-time status indicators.
 - **Container Actions**: Start, stop, restart, logs, history.
 
@@ -80,22 +125,28 @@ The UI loads defaults from env on first boot and persists changes to the DB so t
   <img src="docs/screenshots/settings.png" alt="Settings Screenshot" width="65%">
 </p>
 
-## Core Settings
+Example env file: `.env.example`
+
+<details>
+<summary><strong>Environment variables</strong></summary>
+
+### Core Settings
 
 | Variable                   | Description                                                                                | Default Value                                           |
 | :------------------------- | :----------------------------------------------------------------------------------------- | :------------------------------------------------------ |
-| `DATABASE_URL`             | Connection string for the database (PostgreSQL or SQLite).                                 | `postgres://updockly:updockly@localhost:5432/updocklydb |
+| `DATABASE_URL`             | Connection string for the database (PostgreSQL or SQLite).                                 | `postgres://updockly:updockly@postgres:5432/updocklydb` |
 | `JWT_SECRET`               | **Important.** Primary JWT signing key (generated on first boot if missing).               | (auto-generated)                                        |
 | `VAULT_KEY`                | **Important.** Vault encryption key for 2FA secrets (generated on first boot if missing).  | (auto-generated)                                        |
-| `CLIENT_ORIGIN`            | The URL where the frontend is accessible. Used for CORS and redirects.                     | `http://localhost:8080`                                 |
+| `CLIENT_ORIGIN`            | The URL where the frontend is accessible. Used for CORS and redirects.                     | `http://localhost:5174`                                 |
 | `SERVER_ADDR`              | The address and port the backend server listens on.                                        | `:5000`                                                 |
 | `TIMEZONE`                 | Timezone used for scheduling and logging (e.g., `Europe/Paris`).                           | `UTC`                                                   |
+| `AUTO_PRUNE_IMAGES`        | Automatically clean unused Docker images after updates (`true`/`false`).                   | `false`                                                 |
 | `SERVER_SAN_IPS`           | Comma-separated list of IP addresses to add to the self-signed certificate.                | `127.0.0.1,0.0.0.0`                                     |
 | `SERVER_SAN_DOMAINS`       | Comma-separated list of domains to add to the self-signed certificate.                     | `localhost,backend,updockly-backend`                    |
 | `HIDE_SUPPORT_BUTTON`      | Hide the “Support the project” sidebar CTA in the UI (`true`/`false`).                     | `false`                                                 |
 | `AGENT_REQUIRE_IP_BINDING` | Require agent tokens to bind to the first IP seen; rejects tokens without IP on first use. | `false`                                                 |
 
-## Single Sign-On (SSO)
+### Single Sign-On (SSO)
 
 | Variable            | Description                                                                                       | Default Value |
 | :------------------ | :------------------------------------------------------------------------------------------------ | :------------ |
@@ -106,56 +157,58 @@ The UI loads defaults from env on first boot and persists changes to the DB so t
 | `SSO_CLIENT_SECRET` | The Client Secret provided by your IdP.                                                           | (Empty)       |
 | `SSO_REDIRECT_URL`  | The callback URL registered in your IdP. Should match `CLIENT_ORIGIN` + `/api/auth/sso/callback`. | (Empty)       |
 
-## Notifications
+### Notifications
 
 | Variable                       | Description                                              | Default Value |
 | :----------------------------- | :------------------------------------------------------- | :------------ |
 | `NOTIFICATION_WEBHOOK_URL`     | Generic webhook URL for notifications.                   | (Empty)       |
 | `NOTIFICATION_DISCORD_TOKEN`   | Discord Bot Token.                                       | (Empty)       |
 | `NOTIFICATION_DISCORD_CHANNEL` | Discord Channel ID.                                      | (Empty)       |
-| `NOTIFICATION_ON_SUCCESS`      | Send notification on successful update (`true`/`false`). | (Empty)       |
-| `NOTIFICATION_ON_FAILURE`      | Send notification on failed update (`true`/`false`).     | (Empty)       |
+| `NOTIFICATION_ON_SUCCESS`      | Send notification on successful update (`true`/`false`). | `false`       |
+| `NOTIFICATION_ON_FAILURE`      | Send notification on failed update (`true`/`false`).     | `false`       |
 | `NOTIFICATION_RECAP_TIME`      | Time for daily recap (HH:MM).                            | (Empty)       |
 | `NOTIFICATION_CRON`            | Cron expression for recap schedule.                      | (Empty)       |
 
-## SMTP
+### SMTP
 
 | Variable        | Description                                      | Default Value |
 | :-------------- | :----------------------------------------------- | :------------ |
 | `SMTP_ENABLED`  | Enable or disable SMTP (`true`/`false`).         | `false`       |
 | `SMTP_HOST`     | The SMTP server hostname.                        | (Empty)       |
-| `SMTP_PORT`     | The SMTP server port.                            | (Empty)       |
+| `SMTP_PORT`     | The SMTP server port.                            | `587`         |
 | `SMTP_USER`     | The username for SMTP authentication.            | (Empty)       |
 | `SMTP_PASSWORD` | The password for SMTP authentication.            | (Empty)       |
 | `SMTP_FROM`     | The sender email address.                        | (Empty)       |
-| `SMTP_TLS`      | Enable or disable TLS for SMTP (`true`/`false`). | (Empty)       |
+| `SMTP_TLS`      | Enable or disable TLS for SMTP (`true`/`false`). | `false`       |
 
-## File Secrets (Docker Secrets)
+### File Secrets (Docker Secrets)
 
 Most variables support appending `_FILE` to the name to read the value from a file (e.g., `SECRET_KEY_FILE=/run/secrets/my_secret_key`). This is useful for Docker Swarm or Kubernetes secrets.
 
----
-
-## 🚀 Quick Start
-
-1.  **Follow the setup guide for a quick start**:
-    👉 [Setup Guide](https://github.com/sjul1/Updockly/wiki/1.-Setup)
-
-2.  **Access the UI**:
-
-    - **HTTP**: http://localhost:5174\
-
-3.  **Follow the setup wizard** to create the admin account and configure the database.
-
-<p align="center">
-  <img src="docs/screenshots/admin-creation.png" alt="Admin Creation Screenshot" width="45%">
-</p>
+</details>
 
 ---
 
 ## 🛰️ Agents Setup
 
-👉 [Agent Deployment Guide](https://github.com/sjul1/Updockly/wiki/2.-Agent-Deployment)
+Agents let you manage containers on remote Docker hosts from a single Updockly UI.
+
+👉 Guide: https://github.com/sjul1/Updockly/wiki/2.-Agent-Deployment
+
+---
+
+## 🧑‍💻 Development
+
+### Dev stack (Docker)
+
+```bash
+docker compose -f docker-compose-dev.yml up --build
+```
+
+Dev UI ports:
+
+- `http://localhost:5554`
+- `https://localhost:5555`
 
 ---
 
@@ -166,13 +219,20 @@ Most variables support appending `_FILE` to the name to read the value from a fi
     updockly-agent/   → Lightweight Go agent
     docker-compose.yml → Full stack orchestration
 
+### Tests
+
+```bash
+cd backend && go test ./...
+cd ../frontend && npm ci && npm test
+```
+
 ---
 
 ## 🧩 Troubleshooting
 
 ### Permission Denied for Certificates
 
-**Fix**: Restart the backend:
+**Fix**: Restart the updockly-backend:
 
 ```bash
 docker compose restart updockly-backend
@@ -188,7 +248,7 @@ Set:
 
     SERVER_SAN_IPS=<HOST_IP>
 
-Delete certs volume → restart backend.
+Delete certs volume → restart updockly-backend.
 
 ### Frontend 502 Bad Gateway
 
@@ -200,7 +260,7 @@ docker compose logs -f updockly-backend
 
 ---
 
-## 📅 Upcoming Tasks
+## 🗺️ Roadmap
 
 - [x] Publish Docker image
 - [ ] Implement user roles and permissions for granular access control.
@@ -211,7 +271,16 @@ docker compose logs -f updockly-backend
 
 ---
 
-Your support is huge for me, thank you!
+## 🤝 Contributing
+
+- Issues and PRs are welcome. If you’re unsure where to start, open a discussion/issue with your use case and environment details.
+- Please include logs (`docker compose logs`) and your deployment type (single host / agent / SSO) when reporting bugs.
+
+---
+
+## ☕ Support
+
+If Updockly helps you, consider supporting development:
 
 <a href="https://www.buymeacoffee.com/joul" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
 
