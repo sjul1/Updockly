@@ -591,6 +591,9 @@ export const api = {
     }
     return res.blob();
   },
+
+  getPublicConfig: () =>
+    request<{ sso: { enabled: boolean; provider: string } }>("/auth/config", {}, true),
 };
 
 interface loginRequest {

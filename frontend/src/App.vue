@@ -79,7 +79,7 @@ const currentUser = ref<ApiUser | null>(null);
 const tempToken = ref("");
 const twoFactorRequired = ref(false);
 const needsSetup = ref(false);
-const ssoEnabled = ref(false);
+
 
 const PANEL_STORAGE_KEY = "updockly_active_panel";
 const panelOptions: SidebarPanel[] = [
@@ -421,6 +421,9 @@ const ensureSession = async () => {
     await fetchSettings();
   } catch (error) {
     // Ignore unauthorized here; handled by login flow
+    if (activePanel.value !== "login") {
+      activePanel.value = "login";
+    }
   }
 };
 
@@ -443,6 +446,7 @@ const logout = () => {
   dashboard.value = null;
   hydrateSettings(createDefaultSettings());
   activePanel.value = "login";
+  window.location.reload();
 };
 
 const handleLogin = async (payload: { username: string; password: string }) => {
@@ -679,6 +683,17 @@ onMounted(async () => {
     }
 
     const healthy = await checkHealth({ force: true });
+
+    if (healthy) {
+      try {
+        const publicConfig = await api.getPublicConfig();
+        settingsForm.sso.enabled = publicConfig.sso.enabled;
+        settingsForm.sso.provider = publicConfig.sso.provider;
+      } catch (e) {
+        console.error("Failed to load public config", e);
+      }
+    }
+
     scheduleHealthPolling();
     if (healthy) {
       await ensureSession();
@@ -801,7 +816,7 @@ watch(backendOffline, (isOffline) => {
                 :on-logout="logout"
                 :two-factor-required="twoFactorRequired"
                 :on-verify-2fa="handle2FAVerify"
-                :sso-enabled="ssoEnabled"
+                :sso-enabled="settingsForm.sso.enabled"
               />
             </div>
             <DashboardPanel

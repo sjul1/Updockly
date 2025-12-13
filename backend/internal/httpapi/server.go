@@ -197,6 +197,7 @@ func (s *Server) registerRoutes() {
 
 	auth := s.router.Group("/api/auth")
 	{
+		auth.GET("/config", s.publicConfigHandler)
 		auth.POST("/login", s.loginHandler)
 		auth.POST("/refresh", s.refreshHandler)
 		auth.POST("/logout", s.authMiddleware(), s.logoutHandler)

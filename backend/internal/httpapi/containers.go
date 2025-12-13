@@ -82,6 +82,14 @@ func (s *Server) toggleAutoUpdateHandler(c *gin.Context) {
 		return
 	}
 
+	if claims := getClaims(c); claims != nil {
+		action := "enable-auto-update"
+		if !payload.Enabled {
+			action = "disable-auto-update"
+		}
+		_ = s.auditService.Record(claims.Subject, claims.Name, action, fmt.Sprintf("Toggled auto-update for container: %s", id), c.ClientIP())
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "auto-update preference updated"})
 }
 
@@ -91,6 +99,11 @@ func (s *Server) startContainerHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to start container: %v", err)})
 		return
 	}
+
+	if claims := getClaims(c); claims != nil {
+		_ = s.auditService.Record(claims.Subject, claims.Name, "start-container", fmt.Sprintf("Started container: %s", id), c.ClientIP())
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "Container started"})
 }
 
@@ -100,6 +113,11 @@ func (s *Server) stopContainerHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to stop container: %v", err)})
 		return
 	}
+
+	if claims := getClaims(c); claims != nil {
+		_ = s.auditService.Record(claims.Subject, claims.Name, "stop-container", fmt.Sprintf("Stopped container: %s", id), c.ClientIP())
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "Container stopped"})
 }
 
@@ -109,6 +127,11 @@ func (s *Server) restartContainerHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to restart container: %v", err)})
 		return
 	}
+
+	if claims := getClaims(c); claims != nil {
+		_ = s.auditService.Record(claims.Subject, claims.Name, "restart-container", fmt.Sprintf("Restarted container: %s", id), c.ClientIP())
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "Container restarted"})
 }
 
@@ -194,6 +217,10 @@ func (s *Server) updateContainerHandler(c *gin.Context) {
 		Message:       "Update completed",
 	})
 
+	if claims := getClaims(c); claims != nil {
+		_ = s.auditService.Record(claims.Subject, claims.Name, "update-container", fmt.Sprintf("Updated container: %s (%s)", name, image), c.ClientIP())
+	}
+
 	send(map[string]interface{}{
 		"message": fmt.Sprintf("Container %s updated successfully", name),
 		"newId":   newID,
@@ -216,6 +243,10 @@ func (s *Server) rollbackContainerHandler(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	if claims := getClaims(c); claims != nil {
+		_ = s.auditService.Record(claims.Subject, claims.Name, "rollback-container", fmt.Sprintf("Rolled back container: %s to %s", name, targetImage), c.ClientIP())
 	}
 
 	c.JSON(http.StatusOK, gin.H{

@@ -81,6 +81,15 @@ func (s *Server) setupTestDbHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "database connection successful"})
 }
 
+func (s *Server) publicConfigHandler(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"sso": gin.H{
+			"enabled":  s.cfg.SSO.Enabled,
+			"provider": s.cfg.SSO.Provider,
+		},
+	})
+}
+
 type loginRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
@@ -1176,6 +1185,11 @@ func (s *Server) startAgentContainerHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	if claims := getClaims(c); claims != nil {
+		_ = s.auditService.Record(claims.Subject, claims.Name, "start-agent-container", fmt.Sprintf("Requested start for agent container: %s (agent: %s)", containerID, agentID), c.ClientIP())
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "start requested"})
 }
 
@@ -1186,6 +1200,11 @@ func (s *Server) stopAgentContainerHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	if claims := getClaims(c); claims != nil {
+		_ = s.auditService.Record(claims.Subject, claims.Name, "stop-agent-container", fmt.Sprintf("Requested stop for agent container: %s (agent: %s)", containerID, agentID), c.ClientIP())
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "stop requested"})
 }
 
@@ -1196,6 +1215,11 @@ func (s *Server) restartAgentContainerHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	if claims := getClaims(c); claims != nil {
+		_ = s.auditService.Record(claims.Subject, claims.Name, "restart-agent-container", fmt.Sprintf("Requested restart for agent container: %s (agent: %s)", containerID, agentID), c.ClientIP())
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "restart requested"})
 }
 
@@ -1222,6 +1246,10 @@ func (s *Server) rollbackAgentContainerHandler(c *gin.Context) {
 	if _, err := s.createAgentCommandInternal(agentID, "rollback-container", cmdPayload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	if claims := getClaims(c); claims != nil {
+		_ = s.auditService.Record(claims.Subject, claims.Name, "rollback-agent-container", fmt.Sprintf("Requested rollback for agent container: %s (agent: %s)", containerID, agentID), c.ClientIP())
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "rollback requested"})
@@ -1478,6 +1506,12 @@ func (s *Server) createAgentCommandHandler(c *gin.Context) {
 		return
 	}
 
+	if payload.Type == "update-container" {
+		if claims := getClaims(c); claims != nil {
+			_ = s.auditService.Record(claims.Subject, claims.Name, "update-agent-container", fmt.Sprintf("Requested update for agent container: %s (agent: %s)", payload.ContainerID, agentID), c.ClientIP())
+		}
+	}
+
 	c.JSON(http.StatusCreated, gin.H{
 		"id":          cmd.ID,
 		"type":        cmd.Type,
@@ -1643,6 +1677,14 @@ func (s *Server) toggleAgentContainerAutoUpdate(c *gin.Context) {
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update container auto-update setting"})
 		return
+	}
+
+	if claims := getClaims(c); claims != nil {
+		action := "enable-agent-container-auto-update"
+		if !payload.Enabled {
+			action = "disable-agent-container-auto-update"
+		}
+		_ = s.auditService.Record(claims.Subject, claims.Name, action, fmt.Sprintf("Toggled auto-update for agent container: %s (agent: %s)", containerID, agentID), c.ClientIP())
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "auto-update preference saved"})
