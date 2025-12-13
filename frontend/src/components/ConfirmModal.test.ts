@@ -54,10 +54,10 @@ describe("ConfirmModal", () => {
     });
     await nextTick();
 
-    const confirmBtn = Array.from(root.querySelectorAll("button")).find((btn) =>
+    const confirmBtn = Array.from(document.body.querySelectorAll("button")).find((btn) =>
       btn.textContent?.includes("Remove")
     ) as HTMLButtonElement | undefined;
-    const cancelBtn = Array.from(root.querySelectorAll("button")).find((btn) =>
+    const cancelBtn = Array.from(document.body.querySelectorAll("button")).find((btn) =>
       btn.textContent?.includes("Back")
     ) as HTMLButtonElement | undefined;
 
