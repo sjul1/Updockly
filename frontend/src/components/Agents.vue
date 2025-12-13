@@ -363,7 +363,7 @@ const setupSnippet = computed(() => {
     );
   }
 
-  snippetLines.push("  updockly/agent:latest");
+  snippetLines.push("  sjul/updockly-agent:latest");
   return snippetLines.join("\n");
 });
 
@@ -404,10 +404,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="space-y-6">
-    <SectionHeader
-      title="Remote agent fleet"
-      :icon="ServerCog"
-    >
+    <SectionHeader title="Remote agent fleet" :icon="ServerCog">
       <template #eyebrow>
         <ServerCog class="h-4 w-4 text-primary" />
         Agents
@@ -460,188 +457,194 @@ onBeforeUnmount(() => {
     </SectionHeader>
 
     <div class="space-y-6">
-      <div class="rounded-3xl border border-base-200 bg-base-100 p-6 shadow-xl relative overflow-hidden">
-        <div class="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-secondary/10 pointer-events-none"></div>
-        <div class="relative">
-        <div v-if="!lastToken" class="space-y-4">
-          <div class="flex items-center gap-3">
-            <div
-              class="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center shadow-sm"
-            >
-              <Plus class="w-5 h-5 text-primary" />
-            </div>
-            <div>
-              <h4 class="font-bold text-lg">Create a new agent</h4>
-              <p class="text-xs text-base-content/60">
-                Provision a remote worker and bind it securely.
-              </p>
-            </div>
-          </div>
-          <div
-            class="grid grid-cols-[minmax(0,_1fr)_minmax(0,_1fr)_auto] gap-4 items-center"
-          >
-            <div class="form-control w-full">
-              <input
-                v-model="form.name"
-                class="input input-bordered input-sm w-full rounded-lg"
-                placeholder="Agent Name (e.g. prod-db-01)"
-                @keyup.enter="createAgent"
-              />
-            </div>
-            <div class="form-control w-full">
-              <input
-                v-model="form.hostname"
-                class="input input-bordered input-sm w-full rounded-lg"
-                placeholder="Hostname (Optional)"
-                @keyup.enter="createAgent"
-              />
-            </div>
-            <label
-              class="flex items-center gap-2 text-sm px-3 py-1 rounded-full bg-base-200/60 border border-base-300 justify-center justify-self-end"
-            >
-              <input
-                type="checkbox"
-                class="toggle toggle-sm toggle-success"
-                v-model="form.tlsEnabled"
-              />
-              <span class="text-xs text-base-content/70 whitespace-nowrap">Require TLS</span>
-            </label>
-          </div>
-          <div class="form-control">
-            <textarea
-              v-model="form.notes"
-              class="textarea textarea-bordered textarea-sm w-full rounded-lg"
-              placeholder="Notes (Optional)"
-              rows="2"
-            ></textarea>
-          </div>
-          <div class="mt-2 flex items-center justify-end flex-wrap gap-3">
-            <button
-              class="btn btn-primary btn-sm rounded-full shadow-md"
-              :class="{ loading: creating }"
-              @click="createAgent"
-            >
-              Create Agent
-            </button>
-          </div>
-        </div>
-
+      <div
+        class="rounded-3xl border border-base-200 bg-base-100 p-6 shadow-xl relative overflow-hidden"
+      >
         <div
-          v-else
-          class="space-y-4 rounded-2xl border border-success/30 bg-success/5 p-4 shadow-sm"
-        >
-          <div class="flex items-center justify-between gap-2 text-success">
-            <div class="flex items-center gap-2">
-              <CheckCircle2 class="w-5 h-5" />
-              <h4 class="font-bold">Agent Ready</h4>
-            </div>
-            <span
-              class="text-[10px] uppercase font-bold tracking-wider opacity-60"
-              >Setup Mode</span
-            >
-          </div>
-
-          <div class="space-y-1">
-            <div class="flex justify-between items-end">
-              <span
-                class="text-xs font-semibold text-base-content/60 uppercase tracking-wider"
-                >Access Token</span
-              >
-            </div>
-            <div class="relative group">
+          class="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-secondary/10 pointer-events-none"
+        ></div>
+        <div class="relative">
+          <div v-if="!lastToken" class="space-y-4">
+            <div class="flex items-center gap-3">
               <div
-                class="p-3 bg-base-100 border border-base-300 rounded-lg font-mono text-xs break-all pr-10 shadow-sm"
-                ref="tokenTextEl"
-                @click="selectTokenText"
+                class="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center shadow-sm"
               >
-                {{ lastToken.token }}
+                <Plus class="w-5 h-5 text-primary" />
               </div>
-              <button
-                class="absolute right-1 top-1 btn btn-xs btn-square btn-ghost"
-                @click="copy(lastToken.token)"
-                title="Copy Token"
+              <div>
+                <h4 class="font-bold text-lg">Create a new agent</h4>
+                <p class="text-xs text-base-content/60">
+                  Provision a remote worker and bind it securely.
+                </p>
+              </div>
+            </div>
+            <div
+              class="grid grid-cols-[minmax(0,_1fr)_minmax(0,_1fr)_auto] gap-4 items-center"
+            >
+              <div class="form-control w-full">
+                <input
+                  v-model="form.name"
+                  class="input input-bordered input-sm w-full rounded-lg"
+                  placeholder="Agent Name (e.g. prod-db-01)"
+                  @keyup.enter="createAgent"
+                />
+              </div>
+              <div class="form-control w-full">
+                <input
+                  v-model="form.hostname"
+                  class="input input-bordered input-sm w-full rounded-lg"
+                  placeholder="Hostname (Optional)"
+                  @keyup.enter="createAgent"
+                />
+              </div>
+              <label
+                class="flex items-center gap-2 text-sm px-3 py-1 rounded-full bg-base-200/60 border border-base-300 justify-center justify-self-end"
               >
-                <Copy class="w-4 h-4" />
+                <input
+                  type="checkbox"
+                  class="toggle toggle-sm toggle-success"
+                  v-model="form.tlsEnabled"
+                />
+                <span class="text-xs text-base-content/70 whitespace-nowrap"
+                  >Require TLS</span
+                >
+              </label>
+            </div>
+            <div class="form-control">
+              <textarea
+                v-model="form.notes"
+                class="textarea textarea-bordered textarea-sm w-full rounded-lg"
+                placeholder="Notes (Optional)"
+                rows="2"
+              ></textarea>
+            </div>
+            <div class="mt-2 flex items-center justify-end flex-wrap gap-3">
+              <button
+                class="btn btn-primary btn-sm rounded-full shadow-md"
+                :class="{ loading: creating }"
+                @click="createAgent"
+              >
+                Create Agent
               </button>
             </div>
-            <p class="text-[10px] text-error flex items-center gap-1 mt-1">
-              <AlertTriangle class="w-3 h-3" />
-              Save this token now. It cannot be viewed again.
-            </p>
           </div>
 
-          <div class="divider my-2 opacity-50"></div>
-
-          <div class="space-y-3">
-            <div class="flex items-center gap-2">
-              <Laptop class="w-4 h-4 text-base-content/70" />
-              <span class="text-sm font-semibold">Installation Setup</span>
-            </div>
-
-            <div
-              v-if="setupConfig.enableTLS"
-              class="flex items-center justify-between bg-base-100 p-2 rounded-lg border border-base-200"
-            >
+          <div
+            v-else
+            class="space-y-4 rounded-2xl border border-success/30 bg-success/5 p-4 shadow-sm"
+          >
+            <div class="flex items-center justify-between gap-2 text-success">
               <div class="flex items-center gap-2">
-                <ShieldCheck class="w-4 h-4 text-primary" />
-                <div class="flex flex-col">
-                  <span class="text-xs font-semibold">TLS enabled</span>
-                  <span class="text-[10px] text-base-content/60"
-                    >Download and mount ca.crt with the agent</span
-                  >
-                </div>
+                <CheckCircle2 class="w-5 h-5" />
+                <h4 class="font-bold">Agent Ready</h4>
               </div>
-              <button
-                class="btn btn-xs btn-outline gap-2 border-dashed"
-                @click="downloadCACert"
+              <span
+                class="text-[10px] uppercase font-bold tracking-wider opacity-60"
+                >Setup Mode</span
               >
-                <Check
-                  v-if="setupConfig.caDownloaded"
-                  class="w-3 h-3 text-success"
-                />
-                <Download v-else class="w-3 h-3" />
-                {{
-                  setupConfig.caDownloaded
-                    ? "Certificate Downloaded"
-                    : "Download CA Certificate"
-                }}
-              </button>
             </div>
 
-            <div class="space-y-1 pt-1">
-              <div class="flex justify-between items-center">
+            <div class="space-y-1">
+              <div class="flex justify-between items-end">
                 <span
-                  class="text-[10px] text-base-content/60 uppercase tracking-wider"
-                  >Docker Run Command</span
+                  class="text-xs font-semibold text-base-content/60 uppercase tracking-wider"
+                  >Access Token</span
                 >
+              </div>
+              <div class="relative group">
+                <div
+                  class="p-3 bg-base-100 border border-base-300 rounded-lg font-mono text-xs break-all pr-10 shadow-sm"
+                  ref="tokenTextEl"
+                  @click="selectTokenText"
+                >
+                  {{ lastToken.token }}
+                </div>
                 <button
-                  class="btn btn-ghost btn-xs h-6 min-h-0 px-1 text-base-content/50"
-                  @click="copy(setupSnippet)"
+                  class="absolute right-1 top-1 btn btn-xs btn-square btn-ghost"
+                  @click="copy(lastToken.token)"
+                  title="Copy Token"
                 >
-                  <Copy class="w-3 h-3" />
+                  <Copy class="w-4 h-4" />
                 </button>
               </div>
-              <div
-                class="mockup-code bg-[#1e1e1e] text-gray-300 text-[10px] p-0 min-w-0"
-              >
-                <pre
-                  class="p-3 whitespace-pre-wrap font-mono"
-                ><code>{{ setupSnippet }}</code></pre>
-              </div>
+              <p class="text-[10px] text-error flex items-center gap-1 mt-1">
+                <AlertTriangle class="w-3 h-3" />
+                Save this token now. It cannot be viewed again.
+              </p>
             </div>
 
-            <p class="text-[10px] text-base-content/50 text-center">
-              Run this on the remote Docker host.
-            </p>
+            <div class="divider my-2 opacity-50"></div>
 
-            <button
-              class="btn btn-success btn-sm w-full rounded-lg text-white mt-2"
-              @click="finishSetup"
-            >
-              I've deployed the agent / Done
-            </button>
+            <div class="space-y-3">
+              <div class="flex items-center gap-2">
+                <Laptop class="w-4 h-4 text-base-content/70" />
+                <span class="text-sm font-semibold">Installation Setup</span>
+              </div>
+
+              <div
+                v-if="setupConfig.enableTLS"
+                class="flex items-center justify-between bg-base-100 p-2 rounded-lg border border-base-200"
+              >
+                <div class="flex items-center gap-2">
+                  <ShieldCheck class="w-4 h-4 text-primary" />
+                  <div class="flex flex-col">
+                    <span class="text-xs font-semibold">TLS enabled</span>
+                    <span class="text-[10px] text-base-content/60"
+                      >Download and mount ca.crt with the agent</span
+                    >
+                  </div>
+                </div>
+                <button
+                  class="btn btn-xs btn-outline gap-2 border-dashed"
+                  @click="downloadCACert"
+                >
+                  <Check
+                    v-if="setupConfig.caDownloaded"
+                    class="w-3 h-3 text-success"
+                  />
+                  <Download v-else class="w-3 h-3" />
+                  {{
+                    setupConfig.caDownloaded
+                      ? "Certificate Downloaded"
+                      : "Download CA Certificate"
+                  }}
+                </button>
+              </div>
+
+              <div class="space-y-1 pt-1">
+                <div class="flex justify-between items-center">
+                  <span
+                    class="text-[10px] text-base-content/60 uppercase tracking-wider"
+                    >Docker Run Command</span
+                  >
+                  <button
+                    class="btn btn-ghost btn-xs h-6 min-h-0 px-1 text-base-content/50"
+                    @click="copy(setupSnippet)"
+                  >
+                    <Copy class="w-3 h-3" />
+                  </button>
+                </div>
+                <div
+                  class="mockup-code bg-[#1e1e1e] text-gray-300 text-[10px] p-0 min-w-0"
+                >
+                  <pre
+                    class="p-3 whitespace-pre-wrap font-mono"
+                  ><code>{{ setupSnippet }}</code></pre>
+                </div>
+              </div>
+
+              <p class="text-[10px] text-base-content/50 text-center">
+                Run this on the remote Docker host.
+              </p>
+
+              <button
+                class="btn btn-success btn-sm w-full rounded-lg text-white mt-2"
+                @click="finishSetup"
+              >
+                I've deployed the agent / Done
+              </button>
+            </div>
           </div>
-        </div>
         </div>
       </div>
 
@@ -887,9 +890,7 @@ onBeforeUnmount(() => {
                           <span
                             class="inline-flex h-1.5 w-1.5 rounded-full"
                             :class="
-                              agentOnline(agent)
-                                ? 'bg-success'
-                                : 'bg-base-300'
+                              agentOnline(agent) ? 'bg-success' : 'bg-base-300'
                             "
                           />
                           <span>{{ formatLastSeen(agent) }}</span>
