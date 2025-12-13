@@ -128,66 +128,7 @@ The UI loads defaults from env on first boot and persists changes to the DB so t
 
 Example env file: `.env.example`
 
-<details>
-<summary><strong>Environment variables</strong></summary>
-
-### Core Settings
-
-| Variable                   | Description                                                                                | Default Value                                           |
-| :------------------------- | :----------------------------------------------------------------------------------------- | :------------------------------------------------------ |
-| `DATABASE_URL`             | Connection string for the database (PostgreSQL or SQLite).                                 | `postgres://updockly:updockly@postgres:5432/updocklydb` |
-| `JWT_SECRET`               | **Important.** Primary JWT signing key (generated on first boot if missing).               | (auto-generated)                                        |
-| `VAULT_KEY`                | **Important.** Vault encryption key for 2FA secrets (generated on first boot if missing).  | (auto-generated)                                        |
-| `CLIENT_ORIGIN`            | The URL where the frontend is accessible. Used for CORS and redirects.                     | `http://localhost:5174`                                 |
-| `SERVER_ADDR`              | The address and port the backend server listens on.                                        | `:5000`                                                 |
-| `BACKEND_HOST`             | Docker DNS name of the backend service (used by the frontend Nginx proxy).                 | `updockly-backend`                                      |
-| `TIMEZONE`                 | Timezone used for scheduling and logging (e.g., `Europe/Paris`).                           | `UTC`                                                   |
-| `AUTO_PRUNE_IMAGES`        | Automatically clean unused Docker images after updates (`true`/`false`).                   | `false`                                                 |
-| `SERVER_SAN_IPS`           | Comma-separated list of IP addresses to add to the self-signed certificate.                | `127.0.0.1,0.0.0.0`                                     |
-| `SERVER_SAN_DOMAINS`       | Comma-separated list of domains to add to the self-signed certificate.                     | `localhost,backend,updockly-backend`                    |
-| `HIDE_SUPPORT_BUTTON`      | Hide the “Support the project” sidebar CTA in the UI (`true`/`false`).                     | `false`                                                 |
-| `AGENT_REQUIRE_IP_BINDING` | Require agent tokens to bind to the first IP seen; rejects tokens without IP on first use. | `false`                                                 |
-
-### Single Sign-On (SSO)
-
-| Variable            | Description                                                                                       | Default Value |
-| :------------------ | :------------------------------------------------------------------------------------------------ | :------------ |
-| `SSO_ENABLED`       | Enable or disable SSO (`true`/`false`).                                                           | `false`       |
-| `SSO_PROVIDER`      | The OIDC provider type (e.g., `authentik`, `keycloak`).                                           | (Empty)       |
-| `SSO_ISSUER_URL`    | The OIDC Issuer URL (e.g., `https://auth.example.com/application/o/updockly/`).                   | (Empty)       |
-| `SSO_CLIENT_ID`     | The Client ID provided by your IdP.                                                               | (Empty)       |
-| `SSO_CLIENT_SECRET` | The Client Secret provided by your IdP.                                                           | (Empty)       |
-| `SSO_REDIRECT_URL`  | The callback URL registered in your IdP. Should match `CLIENT_ORIGIN` + `/api/auth/sso/callback`. | (Empty)       |
-
-### Notifications
-
-| Variable                       | Description                                              | Default Value |
-| :----------------------------- | :------------------------------------------------------- | :------------ |
-| `NOTIFICATION_WEBHOOK_URL`     | Generic webhook URL for notifications.                   | (Empty)       |
-| `NOTIFICATION_DISCORD_TOKEN`   | Discord Bot Token.                                       | (Empty)       |
-| `NOTIFICATION_DISCORD_CHANNEL` | Discord Channel ID.                                      | (Empty)       |
-| `NOTIFICATION_ON_SUCCESS`      | Send notification on successful update (`true`/`false`). | `false`       |
-| `NOTIFICATION_ON_FAILURE`      | Send notification on failed update (`true`/`false`).     | `false`       |
-| `NOTIFICATION_RECAP_TIME`      | Time for daily recap (HH:MM).                            | (Empty)       |
-| `NOTIFICATION_CRON`            | Cron expression for recap schedule.                      | (Empty)       |
-
-### SMTP
-
-| Variable        | Description                                      | Default Value |
-| :-------------- | :----------------------------------------------- | :------------ |
-| `SMTP_ENABLED`  | Enable or disable SMTP (`true`/`false`).         | `false`       |
-| `SMTP_HOST`     | The SMTP server hostname.                        | (Empty)       |
-| `SMTP_PORT`     | The SMTP server port.                            | `587`         |
-| `SMTP_USER`     | The username for SMTP authentication.            | (Empty)       |
-| `SMTP_PASSWORD` | The password for SMTP authentication.            | (Empty)       |
-| `SMTP_FROM`     | The sender email address.                        | (Empty)       |
-| `SMTP_TLS`      | Enable or disable TLS for SMTP (`true`/`false`). | `false`       |
-
-### File Secrets (Docker Secrets)
-
-Most variables support appending `_FILE` to the name to read the value from a file (e.g., `SECRET_KEY_FILE=/run/secrets/my_secret_key`). This is useful for Docker Swarm or Kubernetes secrets.
-
-</details>
+👉 Complete .env list: <a href="https://github.com/sjul1/Updockly/wiki/Environment-Variables">Environment Variables</a>
 
 ---
 
