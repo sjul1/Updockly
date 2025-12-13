@@ -18,7 +18,7 @@ services:
     restart: unless-stopped
     container_name: updockly-frontend
     depends_on:
-      - backend
+      - updockly-backend
     volumes:
       - certs:/etc/updockly/certs
     env_file:
