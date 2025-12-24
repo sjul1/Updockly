@@ -442,8 +442,8 @@ func (s *ContainerService) UpdateContainer(ctx context.Context, id string, progr
 
 	configCopy := *info.Config
 	hostConfigCopy := *info.HostConfig
-	if hostConfigCopy.NetworkMode.IsHost() {
-		// Docker does not allow setting hostname with host network mode; clear to avoid recreate failure.
+	if hostConfigCopy.NetworkMode.IsHost() || strings.HasPrefix(string(hostConfigCopy.NetworkMode), "container:") {
+		// Docker does not allow setting hostname with host or container network mode; clear to avoid recreate failure.
 		configCopy.Hostname = ""
 		configCopy.Domainname = ""
 	}
@@ -511,6 +511,12 @@ func (s *ContainerService) RollbackContainer(ctx context.Context, id, targetImag
 	}
 
 	info.Config.Image = targetImage
+
+	if info.HostConfig.NetworkMode.IsHost() || strings.HasPrefix(string(info.HostConfig.NetworkMode), "container:") {
+		info.Config.Hostname = ""
+		info.Config.Domainname = ""
+	}
+
 	resp, err := cli.ContainerCreate(ctx, info.Config, info.HostConfig, networkingConfig, nil, name)
 	if err != nil {
 		return name, "", fmt.Errorf("failed to recreate container: %w", err)

@@ -159,3 +159,4 @@ scripts/
 updockly-agent/agent
 backend/.air.toml
 backend/.gocache
+backend/updockly-api
